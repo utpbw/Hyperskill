@@ -1,30 +1,30 @@
 # Learning Progress Tracker
 
-## Stage 2: Verify New User
+## Stage 3: A Detailed Record
 
 ### Features Implemented:
-- **Added the `add students` command**:
-  - Prompts the user to enter student credentials.
-  - Accepts first name, last name, and a valid email address.
-  - Allows users to type `back` to stop adding students and displays the total count.
+- **Unique Student ID Assignment**:
+  - Each student is assigned a unique ID upon registration.
+  - Email addresses must be unique and cannot be reused.
 
-- **Enhanced Input Validation**:
-  - **First and Last Name Rules**:
-    - Must contain only English letters (A-Z, a-z), hyphens (`-`), or apostrophes (`'`).
-    - Must be at least two characters long.
-    - Cannot start or end with hyphens/apostrophes.
-    - Cannot contain consecutive hyphens/apostrophes.
-  - **Email Validation**:
-    - Must follow a basic format: `name@domain.com`.
-    - Ensures an `@` symbol and a valid domain structure.
+- **New Commands Added**:
+  - `list`: Displays all registered student IDs in the order they were added.
+    - If no students are registered, prints `No students found.`
+  - `add points`: Allows updating student records with earned points.
+    - Accepts input in the format: `studentId number number number number` (for Java, DSA, Databases, Spring).
+    - Ensures valid IDs and non-negative points.
+    - Prints `Points updated.` upon success.
+    - If an ID is invalid, prints `No student is found for id=%s.`
+    - If input format is incorrect, prints `Incorrect points format.`
+  - `find`: Retrieves student progress details.
+    - Displays: `id points: Java=%d; DSA=%d; Databases=%d; Spring=%d`
+    - If an ID is invalid, prints `No student is found for id=%s.`
 
-- **Error Handling & Messages**:
-  - If credentials are incorrect, specific messages are displayed:
-    - `Incorrect first name`
-    - `Incorrect last name`
-    - `Incorrect email`
-  - If input cannot be interpreted as credentials, displays `Incorrect credentials`.
-  - If the user enters `back`, prints `Total X students have been added.`
+- **Data Storage and Validation**:
+  - Ensures that each student can only register once using a unique email.
+  - Stores student progress for Java, DSA, Databases, and Spring.
+  - Prevents negative points from being entered.
+  - Introduced an `enum` (`Course.java`) to manage course names and validation.
 
 ### Project Structure:
 ```
@@ -33,7 +33,10 @@ Learning_Progress_Tracker/
 │   ├── main/
 │   │   └── java/
 │   │       └── com/example/learningtracker/
-│   │           └── LearningProgressTracker.java
+│   │           ├── LearningProgressTracker.java
+│   │           ├── Student.java
+│   │           ├── StudentManager.java
+│   │           ├── Course.java
 │── build.gradle
 │── README.md
 │── settings.gradle

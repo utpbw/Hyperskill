@@ -1,16 +1,13 @@
 package com.example.learningtracker;
 
 import java.util.Scanner;
-import java.util.regex.Pattern;
 
 public class LearningProgressTracker {
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
-    private static final Pattern NAME_PATTERN = Pattern.compile("^[A-Za-z]+(?:[-'][A-Za-z]+)*(?: [A-Za-z]+(?:[-'][A-Za-z]+)*)*$");
+    private static final Scanner scanner = new Scanner(System.in);
+    private static final StudentManager studentManager = new StudentManager();
 
     public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
         System.out.println("Learning Progress Tracker");
-        int studentCount = 0;
 
         while (true) {
             String input = scanner.nextLine().trim();
@@ -23,21 +20,18 @@ public class LearningProgressTracker {
             switch (input.toLowerCase()) {
                 case "exit":
                     System.out.println("Bye!");
-                    scanner.close();
                     return;
                 case "add students":
-                    System.out.println("Enter student credentials or 'back' to return.");
-                    while (true) {
-                        String credentials = scanner.nextLine().trim();
-                        if (credentials.equalsIgnoreCase("back")) {
-                            System.out.println("Total " + studentCount + " students have been added.");
-                            break;
-                        }
-                        if (validateCredentials(credentials)) {
-                            studentCount++;
-                            System.out.println("The student has been added.");
-                        }
-                    }
+                    addStudents();
+                    break;
+                case "list":
+                    studentManager.listStudents();
+                    break;
+                case "add points":
+                    addPoints();
+                    break;
+                case "find":
+                    findStudent();
                     break;
                 default:
                     System.out.println("Unknown command!");
@@ -45,29 +39,37 @@ public class LearningProgressTracker {
         }
     }
 
-    private static boolean validateCredentials(String credentials) {
-        String[] parts = credentials.split(" ", 3);
-        if (parts.length < 3) {
-            System.out.println("Incorrect credentials");
-            return false;
+    private static void addStudents() {
+        System.out.println("Enter student credentials or 'back' to return.");
+        while (true) {
+            String input = scanner.nextLine().trim();
+            if (input.equalsIgnoreCase("back")) {
+                studentManager.printStudentCount();
+                return;
+            }
+            studentManager.addStudent(input);
         }
+    }
 
-        String firstName = parts[0];
-        String lastName = parts[1];
-        String email = parts[2];
+    private static void addPoints() {
+        System.out.println("Enter an id and points or 'back' to return.");
+        while (true) {
+            String input = scanner.nextLine().trim();
+            if (input.equalsIgnoreCase("back")) {
+                return;
+            }
+            studentManager.updatePoints(input);
+        }
+    }
 
-        if (!NAME_PATTERN.matcher(firstName).matches() || firstName.length() < 2) {
-            System.out.println("Incorrect first name");
-            return false;
+    private static void findStudent() {
+        System.out.println("Enter an id or 'back' to return.");
+        while (true) {
+            String input = scanner.nextLine().trim();
+            if (input.equalsIgnoreCase("back")) {
+                return;
+            }
+            studentManager.findStudent(input);
         }
-        if (!NAME_PATTERN.matcher(lastName).matches() || lastName.length() < 2) {
-            System.out.println("Incorrect last name");
-            return false;
-        }
-        if (!EMAIL_PATTERN.matcher(email).matches()) {
-            System.out.println("Incorrect email");
-            return false;
-        }
-        return true;
     }
 }

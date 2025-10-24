@@ -51,13 +51,15 @@ public class FeedbackController {
             @RequestParam(value = "perPage", required = false) Integer perPage
     ) {
         int sanitizedPage = page == null ? 1 : page;
-        if (sanitizedPage < 1) {
+        int sanitizedPerPage = perPage == null ? 10 : perPage;
+
+        if (sanitizedPerPage < 5 || sanitizedPerPage > 20) {
+            sanitizedPerPage = 10;
             sanitizedPage = 1;
         }
 
-        int sanitizedPerPage = perPage == null ? 10 : perPage;
-        if (sanitizedPerPage < 5 || sanitizedPerPage > 20) {
-            sanitizedPerPage = 10;
+        if (sanitizedPage < 1) {
+            sanitizedPage = 1;
         }
 
         Pageable pageable = PageRequest.of(

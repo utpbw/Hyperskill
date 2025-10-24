@@ -209,6 +209,50 @@ class FeedbackControllerIntegrationTest {
         assertThat(page.lastPage()).isTrue();
     }
 
+    @Test
+    void listFeedback_whenPerPageBelowMinimum_resetsToDefaultsAndReturnsFirstPage() {
+        FeedbackRequest firstRequest = new FeedbackRequest(
+                4,
+                "good but expensive",
+                "John Doe",
+                "MacBook Air",
+                "Online Trade LLC"
+        );
+        FeedbackRequest secondRequest = new FeedbackRequest(
+                4,
+                null,
+                null,
+                "Blue duct tape",
+                "99 Cents & Co."
+        );
+
+        URI firstLocation = restTemplate.postForLocation("/feedback", firstRequest);
+        URI secondLocation = restTemplate.postForLocation("/feedback", secondRequest);
+
+        ResponseEntity<FeedbackPageResponse> response = restTemplate.getForEntity(
+                "/feedback?page=2&perPage=3",
+                FeedbackPageResponse.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        FeedbackPageResponse page = response.getBody();
+        assertThat(page).isNotNull();
+        assertThat(page.totalDocuments()).isEqualTo(2);
+        assertThat(page.firstPage()).isTrue();
+        assertThat(page.lastPage()).isTrue();
+        assertThat(page.documents()).hasSize(2);
+        assertThat(page.documents().get(0).id()).isEqualTo(extractId(secondLocation));
+        assertThat(page.documents().get(0).feedback()).isNull();
+        assertThat(page.documents().get(0).customer()).isNull();
+        assertThat(page.documents().get(0).product()).isEqualTo("Blue duct tape");
+        assertThat(page.documents().get(0).vendor()).isEqualTo("99 Cents & Co.");
+        assertThat(page.documents().get(1).id()).isEqualTo(extractId(firstLocation));
+        assertThat(page.documents().get(1).feedback()).isEqualTo("good but expensive");
+        assertThat(page.documents().get(1).customer()).isEqualTo("John Doe");
+        assertThat(page.documents().get(1).product()).isEqualTo("MacBook Air");
+        assertThat(page.documents().get(1).vendor()).isEqualTo("Online Trade LLC");
+    }
+
     private String extractId(URI location) {
         assertThat(location).isNotNull();
         String path = location.getPath();

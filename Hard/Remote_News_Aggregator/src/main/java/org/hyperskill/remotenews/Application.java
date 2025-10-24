@@ -21,7 +21,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -44,6 +43,7 @@ public class Application {
     private static class AggregateHandler implements HttpHandler {
         private static final String JSON_CONTENT_TYPE = "application/json;charset=UTF-8";
         private static final String TEXT_CONTENT_TYPE = "text/plain;charset=UTF-8";
+        private static final int MAX_RETRIES = 5;
 
         private final HttpClient client;
 
@@ -65,29 +65,24 @@ public class Application {
                     return;
                 }
 
-                AtomicInteger failedCalls = new AtomicInteger();
-
-                CompletableFuture<List<Transaction>> first = fetchTransactionsAsync(SERVER_ONE, account)
-                        .exceptionally(ex -> {
-                            failedCalls.incrementAndGet();
-                            return List.of();
-                        });
-
-                CompletableFuture<List<Transaction>> second = fetchTransactionsAsync(SERVER_TWO, account)
-                        .exceptionally(ex -> {
-                            failedCalls.incrementAndGet();
-                            return List.of();
-                        });
+                CompletableFuture<UpstreamOutcome> first = fetchTransactionsAsync(SERVER_ONE, account);
+                CompletableFuture<UpstreamOutcome> second = fetchTransactionsAsync(SERVER_TWO, account);
 
                 CompletableFuture.allOf(first, second).join();
 
-                if (failedCalls.get() == 2) {
-                    sendResponse(exchange, 500, toUtf8("Failed to fetch transactions"), TEXT_CONTENT_TYPE);
+                UpstreamOutcome firstResult = first.join();
+                UpstreamOutcome secondResult = second.join();
+
+                if (!firstResult.isSuccess() && !secondResult.isSuccess()) {
+                    int status = firstResult.statusOrDefault(secondResult);
+                    byte[] message = toUtf8("Failed to fetch transactions");
+                    sendResponse(exchange, status, message, TEXT_CONTENT_TYPE);
                     return;
                 }
 
-                List<Transaction> merged = Stream.of(first.join(), second.join())
-                        .flatMap(List::stream)
+                List<Transaction> merged = Stream.of(firstResult, secondResult)
+                        .filter(UpstreamOutcome::isSuccess)
+                        .flatMap(outcome -> outcome.transactions.stream())
                         .sorted(Comparator.comparing(
                                 Transaction::timestampAsInstant,
                                 Comparator.nullsLast(Comparator.reverseOrder())))
@@ -108,12 +103,12 @@ public class Application {
             }
         }
 
-        private CompletableFuture<List<Transaction>> fetchTransactionsAsync(String serverBaseUrl, String account) {
+        private CompletableFuture<UpstreamOutcome> fetchTransactionsAsync(String serverBaseUrl, String account) {
             String encodedAccount = encode(account);
-            return fetchTransactionsWithRetries(serverBaseUrl, encodedAccount, 5);
+            return fetchTransactionsWithRetries(serverBaseUrl, encodedAccount, MAX_RETRIES);
         }
 
-        private CompletableFuture<List<Transaction>> fetchTransactionsWithRetries(
+        private CompletableFuture<UpstreamOutcome> fetchTransactionsWithRetries(
                 String serverBaseUrl,
                 String encodedAccount,
                 int attemptsRemaining
@@ -126,37 +121,38 @@ public class Application {
                     .build();
 
             return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenCompose(response -> {
-                        int status = response.statusCode();
-                        if (status == 200) {
-                            try {
-                                return CompletableFuture.completedFuture(
-                                        OBJECT_MAPPER.readValue(
-                                                response.body(),
-                                                new TypeReference<List<Transaction>>() { }
-                                        )
-                                );
-                            } catch (IOException parsingFailure) {
-                                return failedFuture(parsingFailure);
-                            }
-                        }
+                    .thenCompose(response -> handleResponse(response, serverBaseUrl, encodedAccount, attemptsRemaining))
+                    .exceptionally(throwable -> UpstreamOutcome.failure(null, throwable));
+        }
 
-                        if (shouldRetry(status) && attemptsRemaining > 1) {
-                            return fetchTransactionsWithRetries(serverBaseUrl, encodedAccount, attemptsRemaining - 1);
-                        }
+        private CompletableFuture<UpstreamOutcome> handleResponse(
+                HttpResponse<String> response,
+                String serverBaseUrl,
+                String encodedAccount,
+                int attemptsRemaining
+        ) {
+            int status = response.statusCode();
+            if (status == 200) {
+                try {
+                    List<Transaction> transactions = OBJECT_MAPPER.readValue(
+                            response.body(),
+                            new TypeReference<List<Transaction>>() { }
+                    );
+                    return CompletableFuture.completedFuture(UpstreamOutcome.success(transactions));
+                } catch (IOException parsingFailure) {
+                    return CompletableFuture.failedFuture(parsingFailure);
+                }
+            }
 
-                        return failedFuture(new IOException("Unexpected status " + status));
-                    });
+            if (shouldRetry(status) && attemptsRemaining > 1) {
+                return fetchTransactionsWithRetries(serverBaseUrl, encodedAccount, attemptsRemaining - 1);
+            }
+
+            return CompletableFuture.completedFuture(UpstreamOutcome.failure(status, null));
         }
 
         private boolean shouldRetry(int status) {
             return status == 503 || status == 529;
-        }
-
-        private <T> CompletableFuture<T> failedFuture(Throwable throwable) {
-            CompletableFuture<T> failed = new CompletableFuture<>();
-            failed.completeExceptionally(throwable);
-            return failed;
         }
 
         private byte[] toUtf8(String value) {
@@ -268,6 +264,48 @@ public class Application {
             } catch (DateTimeParseException e) {
                 return null;
             }
+        }
+    }
+
+    private static final class UpstreamOutcome {
+        private final List<Transaction> transactions;
+        private final Integer failureStatus;
+        private final Throwable error;
+
+        private UpstreamOutcome(List<Transaction> transactions, Integer failureStatus, Throwable error) {
+            this.transactions = transactions == null ? List.of() : transactions;
+            this.failureStatus = failureStatus;
+            this.error = error;
+        }
+
+        private static UpstreamOutcome success(List<Transaction> transactions) {
+            return new UpstreamOutcome(transactions, null, null);
+        }
+
+        private static UpstreamOutcome failure(Integer status, Throwable error) {
+            return new UpstreamOutcome(List.of(), status, error);
+        }
+
+        private boolean isSuccess() {
+            return failureStatus == null && error == null;
+        }
+
+        private int statusOrDefault(UpstreamOutcome alternative) {
+            Integer preferred = preferredStatus(failureStatus, alternative.failureStatus);
+            return preferred != null ? preferred : 500;
+        }
+
+        private static Integer preferredStatus(Integer first, Integer second) {
+            if (Integer.valueOf(529).equals(first) || Integer.valueOf(529).equals(second)) {
+                return 529;
+            }
+            if (Integer.valueOf(503).equals(first) || Integer.valueOf(503).equals(second)) {
+                return 503;
+            }
+            if (first != null) {
+                return first;
+            }
+            return second;
         }
     }
 }

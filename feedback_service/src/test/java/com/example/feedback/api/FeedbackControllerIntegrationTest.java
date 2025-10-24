@@ -80,6 +80,16 @@ class FeedbackControllerIntegrationTest {
         assertThat(responses[1].customer()).isNull();
     }
 
+    @Test
+    void getFeedback_whenIdDoesNotExist_returnsNotFound() {
+        ResponseEntity<FeedbackResponse> response = restTemplate.getForEntity(
+                "/feedback/655e0c5f76a1e10ce2159b90",
+                FeedbackResponse.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
     private String extractId(URI location) {
         assertThat(location).isNotNull();
         String path = location.getPath();

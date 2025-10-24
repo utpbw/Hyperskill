@@ -19,9 +19,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 
 public class Application {
@@ -49,51 +52,44 @@ public class Application {
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-                exchange.sendResponseHeaders(405, -1);
-                exchange.close();
-                return;
-            }
-
-            String account = extractAccount(exchange.getRequestURI().getQuery());
-            if (account == null || account.isBlank()) {
-                byte[] error = "Missing account parameter".getBytes(StandardCharsets.UTF_8);
-                exchange.sendResponseHeaders(400, error.length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(error);
-                }
-                return;
-            }
-
             try {
-                List<Transaction> transactions = new ArrayList<>();
-                transactions.addAll(fetchTransactions(SERVER_ONE, account));
-                transactions.addAll(fetchTransactions(SERVER_TWO, account));
-
-                transactions.sort(Comparator.comparing(
-                        Transaction::timestampAsInstant,
-                        Comparator.nullsLast(Comparator.reverseOrder())));
-
-                String responseBody = OBJECT_MAPPER.writeValueAsString(transactions);
-                byte[] responseBytes = responseBody.getBytes(StandardCharsets.UTF_8);
-
-                exchange.getResponseHeaders().set("Content-Type", "application/json;charset=UTF-8");
-                exchange.sendResponseHeaders(200, responseBytes.length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(responseBytes);
+                if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    sendResponse(exchange, 405, null, null);
+                    return;
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                exchange.sendResponseHeaders(500, -1);
-                exchange.close();
+
+                String account = extractAccount(exchange.getRequestURI().getQuery());
+                if (account == null || account.isBlank()) {
+                    byte[] error = "Missing account parameter".getBytes(StandardCharsets.UTF_8);
+                    sendResponse(exchange, 400, error, "text/plain;charset=UTF-8");
+                    return;
+                }
+
+                CompletableFuture<List<Transaction>> first = fetchTransactionsAsync(SERVER_ONE, account);
+                CompletableFuture<List<Transaction>> second = fetchTransactionsAsync(SERVER_TWO, account);
+
+                List<Transaction> transactions = first.thenCombine(second, (left, right) -> {
+                    List<Transaction> merged = new ArrayList<>(left.size() + right.size());
+                    merged.addAll(left);
+                    merged.addAll(right);
+                    merged.sort(Comparator.comparing(
+                            Transaction::timestampAsInstant,
+                            Comparator.nullsLast(Comparator.reverseOrder())));
+                    return merged;
+                }).join();
+
+                byte[] responseBytes = OBJECT_MAPPER.writeValueAsBytes(transactions);
+                sendResponse(exchange, 200, responseBytes, "application/json;charset=UTF-8");
+            } catch (CompletionException e) {
+                sendResponse(exchange, 500, null, null);
             } catch (IOException e) {
-                exchange.sendResponseHeaders(500, -1);
+                sendResponse(exchange, 500, null, null);
+            } finally {
                 exchange.close();
             }
         }
 
-        private List<Transaction> fetchTransactions(String serverBaseUrl, String account)
-                throws IOException, InterruptedException {
+        private CompletableFuture<List<Transaction>> fetchTransactionsAsync(String serverBaseUrl, String account) {
             String encodedAccount = URLEncoder.encode(account, StandardCharsets.UTF_8);
             URI requestUri = URI.create(serverBaseUrl + TRANSACTIONS_PATH + "?account=" + encodedAccount);
 
@@ -102,8 +98,37 @@ public class Application {
                     .GET()
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            return OBJECT_MAPPER.readValue(response.body(), new TypeReference<List<Transaction>>() { });
+            return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        if (response.statusCode() != 200) {
+                            return Collections.<Transaction>emptyList();
+                        }
+
+                        try {
+                            return OBJECT_MAPPER.readValue(
+                                    response.body(),
+                                    new TypeReference<List<Transaction>>() { });
+                        } catch (IOException e) {
+                            return Collections.<Transaction>emptyList();
+                        }
+                    })
+                    .exceptionally(ignored -> Collections.<Transaction>emptyList());
+        }
+
+        private void sendResponse(HttpExchange exchange, int statusCode, byte[] body, String contentType) throws IOException {
+            if (contentType != null) {
+                exchange.getResponseHeaders().set("Content-Type", contentType);
+            }
+
+            if (body == null) {
+                exchange.sendResponseHeaders(statusCode, -1);
+                return;
+            }
+
+            exchange.sendResponseHeaders(statusCode, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
         }
 
         private String extractAccount(String query) {

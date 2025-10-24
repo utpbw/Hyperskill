@@ -48,7 +48,11 @@ public class FeedbackController {
     @GetMapping
     public FeedbackPageResponse getAllFeedback(
             @RequestParam(value = "page", required = false) Integer page,
-            @RequestParam(value = "perPage", required = false) Integer perPage
+            @RequestParam(value = "perPage", required = false) Integer perPage,
+            @RequestParam(value = "rating", required = false) Integer rating,
+            @RequestParam(value = "customer", required = false) String customer,
+            @RequestParam(value = "product", required = false) String product,
+            @RequestParam(value = "vendor", required = false) String vendor
     ) {
         int sanitizedPage = page == null ? 1 : page;
         int sanitizedPerPage = perPage == null ? 10 : perPage;
@@ -68,7 +72,13 @@ public class FeedbackController {
                 Sort.by(Sort.Direction.DESC, "_id")
         );
 
-        Page<FeedbackDocument> feedbackPage = repository.findAll(pageable);
+        Page<FeedbackDocument> feedbackPage = repository.findFiltered(
+                rating,
+                trimToNull(customer),
+                trimToNull(product),
+                trimToNull(vendor),
+                pageable
+        );
         List<FeedbackResponse> documents = feedbackPage.getContent().stream()
                 .map(FeedbackResponse::fromDocument)
                 .toList();
@@ -79,5 +89,13 @@ public class FeedbackController {
                 feedbackPage.isLast(),
                 documents
         );
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

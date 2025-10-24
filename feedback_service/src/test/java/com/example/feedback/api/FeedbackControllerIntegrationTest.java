@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -251,6 +252,90 @@ class FeedbackControllerIntegrationTest {
         assertThat(page.documents().get(1).customer()).isEqualTo("John Doe");
         assertThat(page.documents().get(1).product()).isEqualTo("MacBook Air");
         assertThat(page.documents().get(1).vendor()).isEqualTo("Online Trade LLC");
+    }
+
+    @Test
+    void listFeedback_withMultipleFilters_appliesFiltersBeforePagination() {
+        List<String> matchingIds = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            FeedbackRequest request = new FeedbackRequest(
+                    5,
+                    "excellent product " + i,
+                    "Customer " + i,
+                    "Blue duct tape",
+                    "Total Sales"
+            );
+            URI location = restTemplate.postForLocation("/feedback", request);
+            matchingIds.add(extractId(location));
+        }
+
+        restTemplate.postForLocation("/feedback", new FeedbackRequest(
+                4,
+                "different rating",
+                "Customer 100",
+                "Blue duct tape",
+                "Total Sales"
+        ));
+        restTemplate.postForLocation("/feedback", new FeedbackRequest(
+                5,
+                "different product",
+                "Customer 200",
+                "MacBook Air",
+                "Total Sales"
+        ));
+
+        URI requestUri = UriComponentsBuilder.fromPath("/feedback")
+                .queryParam("page", 2)
+                .queryParam("perPage", 5)
+                .queryParam("rating", 5)
+                .queryParam("product", "blue duct tape")
+                .queryParam("vendor", "Total Sales")
+                .build()
+                .toUri();
+
+        ResponseEntity<FeedbackPageResponse> response = restTemplate.getForEntity(
+                requestUri,
+                FeedbackPageResponse.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        FeedbackPageResponse page = response.getBody();
+        assertThat(page).isNotNull();
+        assertThat(page.totalDocuments()).isEqualTo(6);
+        assertThat(page.firstPage()).isFalse();
+        assertThat(page.lastPage()).isTrue();
+        assertThat(page.documents()).hasSize(1);
+
+        List<String> expectedOrder = new ArrayList<>(matchingIds);
+        java.util.Collections.reverse(expectedOrder);
+        assertThat(page.documents().get(0).id()).isEqualTo(expectedOrder.get(5));
+        assertThat(page.documents().get(0).product()).isEqualTo("Blue duct tape");
+        assertThat(page.documents().get(0).vendor()).isEqualTo("Total Sales");
+        assertThat(page.documents().get(0).rating()).isEqualTo(5);
+    }
+
+    @Test
+    void listFeedback_withFiltersYieldingNoMatches_returnsEmptyResult() {
+        restTemplate.postForLocation("/feedback", new FeedbackRequest(
+                3,
+                "average",
+                "Chris",
+                "Generic product",
+                "General Store"
+        ));
+
+        ResponseEntity<FeedbackPageResponse> response = restTemplate.getForEntity(
+                "/feedback?rating=5&customer=Alex",
+                FeedbackPageResponse.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        FeedbackPageResponse page = response.getBody();
+        assertThat(page).isNotNull();
+        assertThat(page.totalDocuments()).isZero();
+        assertThat(page.firstPage()).isTrue();
+        assertThat(page.lastPage()).isTrue();
+        assertThat(page.documents()).isEmpty();
     }
 
     private String extractId(URI location) {

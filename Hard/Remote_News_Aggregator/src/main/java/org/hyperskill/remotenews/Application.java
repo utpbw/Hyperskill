@@ -21,7 +21,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -110,7 +109,16 @@ public class Application {
         }
 
         private CompletableFuture<List<Transaction>> fetchTransactionsAsync(String serverBaseUrl, String account) {
-            URI requestUri = URI.create(serverBaseUrl + TRANSACTIONS_PATH + "?account=" + encode(account));
+            String encodedAccount = encode(account);
+            return fetchTransactionsWithRetries(serverBaseUrl, encodedAccount, 5);
+        }
+
+        private CompletableFuture<List<Transaction>> fetchTransactionsWithRetries(
+                String serverBaseUrl,
+                String encodedAccount,
+                int attemptsRemaining
+        ) {
+            URI requestUri = URI.create(serverBaseUrl + TRANSACTIONS_PATH + "?account=" + encodedAccount);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(requestUri)
@@ -118,19 +126,37 @@ public class Application {
                     .build();
 
             return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenApply(response -> {
-                        if (response.statusCode() != 200) {
-                            throw new CompletionException(new IOException("Unexpected status " + response.statusCode()));
+                    .thenCompose(response -> {
+                        int status = response.statusCode();
+                        if (status == 200) {
+                            try {
+                                return CompletableFuture.completedFuture(
+                                        OBJECT_MAPPER.readValue(
+                                                response.body(),
+                                                new TypeReference<List<Transaction>>() { }
+                                        )
+                                );
+                            } catch (IOException parsingFailure) {
+                                return failedFuture(parsingFailure);
+                            }
                         }
 
-                        try {
-                            return OBJECT_MAPPER.readValue(
-                                    response.body(),
-                                    new TypeReference<List<Transaction>>() { });
-                        } catch (IOException parsingFailure) {
-                            throw new CompletionException(parsingFailure);
+                        if (shouldRetry(status) && attemptsRemaining > 1) {
+                            return fetchTransactionsWithRetries(serverBaseUrl, encodedAccount, attemptsRemaining - 1);
                         }
+
+                        return failedFuture(new IOException("Unexpected status " + status));
                     });
+        }
+
+        private boolean shouldRetry(int status) {
+            return status == 503 || status == 529;
+        }
+
+        private <T> CompletableFuture<T> failedFuture(Throwable throwable) {
+            CompletableFuture<T> failed = new CompletableFuture<>();
+            failed.completeExceptionally(throwable);
+            return failed;
         }
 
         private byte[] toUtf8(String value) {

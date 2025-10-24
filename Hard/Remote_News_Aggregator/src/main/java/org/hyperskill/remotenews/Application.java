@@ -46,6 +46,8 @@ public class Application {
         private static final int MAX_RETRIES = 5;
 
         private final HttpClient client;
+        private final java.util.concurrent.ConcurrentMap<String, CompletableFuture<AggregateResult>> cache =
+                new java.util.concurrent.ConcurrentHashMap<>();
 
         private AggregateHandler(HttpClient client) {
             this.client = client;
@@ -65,31 +67,15 @@ public class Application {
                     return;
                 }
 
-                CompletableFuture<UpstreamOutcome> first = fetchTransactionsAsync(SERVER_ONE, account);
-                CompletableFuture<UpstreamOutcome> second = fetchTransactionsAsync(SERVER_TWO, account);
+                AggregateResult result = getOrLoadAggregate(account).join();
 
-                CompletableFuture.allOf(first, second).join();
-
-                UpstreamOutcome firstResult = first.join();
-                UpstreamOutcome secondResult = second.join();
-
-                if (!firstResult.isSuccess() && !secondResult.isSuccess()) {
-                    int status = firstResult.statusOrDefault(secondResult);
+                if (!result.isSuccess()) {
                     byte[] message = toUtf8("Failed to fetch transactions");
-                    sendResponse(exchange, status, message, TEXT_CONTENT_TYPE);
+                    sendResponse(exchange, result.statusCode(), message, TEXT_CONTENT_TYPE);
                     return;
                 }
 
-                List<Transaction> merged = Stream.of(firstResult, secondResult)
-                        .filter(UpstreamOutcome::isSuccess)
-                        .flatMap(outcome -> outcome.transactions.stream())
-                        .sorted(Comparator.comparing(
-                                Transaction::timestampAsInstant,
-                                Comparator.nullsLast(Comparator.reverseOrder())))
-                        .collect(Collectors.toList());
-
-                byte[] responseBytes = OBJECT_MAPPER.writeValueAsBytes(merged);
-                sendResponse(exchange, 200, responseBytes, JSON_CONTENT_TYPE);
+                sendResponse(exchange, 200, result.responseBody(), JSON_CONTENT_TYPE);
             } catch (IOException e) {
                 sendResponse(exchange, 500, null, null);
             } catch (RuntimeException e) {
@@ -100,6 +86,60 @@ public class Application {
                 sendResponse(exchange, 500, null, null);
             } finally {
                 exchange.close();
+            }
+        }
+
+        private CompletableFuture<AggregateResult> getOrLoadAggregate(String account) {
+            CompletableFuture<AggregateResult> cached = cache.get(account);
+            if (cached != null) {
+                return cached;
+            }
+
+            CompletableFuture<AggregateResult> loader = computeAggregate(account);
+            CompletableFuture<AggregateResult> existing = cache.putIfAbsent(account, loader);
+            if (existing != null) {
+                return existing;
+            }
+
+            loader.whenComplete((result, throwable) -> {
+                if (throwable != null || result == null || !result.isCacheable()) {
+                    cache.remove(account, loader);
+                }
+            });
+
+            return loader;
+        }
+
+        private CompletableFuture<AggregateResult> computeAggregate(String account) {
+            CompletableFuture<UpstreamOutcome> first = fetchTransactionsAsync(SERVER_ONE, account);
+            CompletableFuture<UpstreamOutcome> second = fetchTransactionsAsync(SERVER_TWO, account);
+
+            return CompletableFuture.allOf(first, second)
+                    .thenApply(ignored -> combineResults(first.join(), second.join()))
+                    .exceptionally(throwable -> AggregateResult.failure(500));
+        }
+
+        private AggregateResult combineResults(UpstreamOutcome firstResult, UpstreamOutcome secondResult) {
+            boolean firstSuccess = firstResult.isSuccess();
+            boolean secondSuccess = secondResult.isSuccess();
+
+            if (!firstSuccess && !secondSuccess) {
+                return AggregateResult.failure(firstResult.statusOrDefault(secondResult));
+            }
+
+            List<Transaction> merged = Stream.of(firstResult, secondResult)
+                    .filter(UpstreamOutcome::isSuccess)
+                    .flatMap(outcome -> outcome.transactions.stream())
+                    .sorted(Comparator.comparing(
+                            Transaction::timestampAsInstant,
+                            Comparator.nullsLast(Comparator.reverseOrder())))
+                    .collect(Collectors.toList());
+
+            try {
+                byte[] responseBytes = OBJECT_MAPPER.writeValueAsBytes(merged);
+                return AggregateResult.success(responseBytes, firstSuccess && secondSuccess);
+            } catch (IOException e) {
+                return AggregateResult.failure(500);
             }
         }
 
@@ -264,6 +304,42 @@ public class Application {
             } catch (DateTimeParseException e) {
                 return null;
             }
+        }
+    }
+
+    private static final class AggregateResult {
+        private final byte[] responseBody;
+        private final Integer statusCode;
+        private final boolean cacheable;
+
+        private AggregateResult(byte[] responseBody, Integer statusCode, boolean cacheable) {
+            this.responseBody = responseBody;
+            this.statusCode = statusCode;
+            this.cacheable = cacheable;
+        }
+
+        private static AggregateResult success(byte[] responseBody, boolean cacheable) {
+            return new AggregateResult(responseBody, null, cacheable);
+        }
+
+        private static AggregateResult failure(int statusCode) {
+            return new AggregateResult(null, statusCode, false);
+        }
+
+        private boolean isSuccess() {
+            return statusCode == null;
+        }
+
+        private boolean isCacheable() {
+            return cacheable && isSuccess();
+        }
+
+        private byte[] responseBody() {
+            return responseBody;
+        }
+
+        private int statusCode() {
+            return statusCode == null ? 200 : statusCode;
         }
     }
 

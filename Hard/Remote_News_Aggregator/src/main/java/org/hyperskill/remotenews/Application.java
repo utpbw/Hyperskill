@@ -17,11 +17,14 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class Application {
     private static final int PORT = 8080;
@@ -40,6 +43,9 @@ public class Application {
     }
 
     private static class AggregateHandler implements HttpHandler {
+        private static final String JSON_CONTENT_TYPE = "application/json;charset=UTF-8";
+        private static final String TEXT_CONTENT_TYPE = "text/plain;charset=UTF-8";
+
         private final HttpClient client;
 
         private AggregateHandler(HttpClient client) {
@@ -56,32 +62,54 @@ public class Application {
 
                 String account = extractAccount(exchange.getRequestURI().getQuery());
                 if (account == null || account.isBlank()) {
-                    byte[] error = "Missing account parameter".getBytes(StandardCharsets.UTF_8);
-                    sendResponse(exchange, 400, error, "text/plain;charset=UTF-8");
+                    sendResponse(exchange, 400, toUtf8("Missing account parameter"), TEXT_CONTENT_TYPE);
                     return;
                 }
 
-                List<Transaction> merged = new ArrayList<>();
-                merged.addAll(fetchTransactions(SERVER_ONE, account));
-                merged.addAll(fetchTransactions(SERVER_TWO, account));
+                AtomicInteger failedCalls = new AtomicInteger();
 
-                merged.sort(Comparator.comparing(
-                        Transaction::timestampAsInstant,
-                        Comparator.nullsLast(Comparator.reverseOrder())));
+                CompletableFuture<List<Transaction>> first = fetchTransactionsAsync(SERVER_ONE, account)
+                        .exceptionally(ex -> {
+                            failedCalls.incrementAndGet();
+                            return List.of();
+                        });
+
+                CompletableFuture<List<Transaction>> second = fetchTransactionsAsync(SERVER_TWO, account)
+                        .exceptionally(ex -> {
+                            failedCalls.incrementAndGet();
+                            return List.of();
+                        });
+
+                CompletableFuture.allOf(first, second).join();
+
+                if (failedCalls.get() == 2) {
+                    sendResponse(exchange, 500, toUtf8("Failed to fetch transactions"), TEXT_CONTENT_TYPE);
+                    return;
+                }
+
+                List<Transaction> merged = Stream.of(first.join(), second.join())
+                        .flatMap(List::stream)
+                        .sorted(Comparator.comparing(
+                                Transaction::timestampAsInstant,
+                                Comparator.nullsLast(Comparator.reverseOrder())))
+                        .collect(Collectors.toList());
 
                 byte[] responseBytes = OBJECT_MAPPER.writeValueAsBytes(merged);
-                sendResponse(exchange, 200, responseBytes, "application/json;charset=UTF-8");
+                sendResponse(exchange, 200, responseBytes, JSON_CONTENT_TYPE);
             } catch (IOException e) {
                 sendResponse(exchange, 500, null, null);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            } catch (RuntimeException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 sendResponse(exchange, 500, null, null);
             } finally {
                 exchange.close();
             }
         }
 
-        private List<Transaction> fetchTransactions(String serverBaseUrl, String account) throws IOException, InterruptedException {
+        private CompletableFuture<List<Transaction>> fetchTransactionsAsync(String serverBaseUrl, String account) {
             URI requestUri = URI.create(serverBaseUrl + TRANSACTIONS_PATH + "?account=" + encode(account));
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -89,15 +117,24 @@ public class Application {
                     .GET()
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        if (response.statusCode() != 200) {
+                            throw new CompletionException(new IOException("Unexpected status " + response.statusCode()));
+                        }
 
-            if (response.statusCode() != 200) {
-                throw new IOException("Unexpected status " + response.statusCode());
-            }
+                        try {
+                            return OBJECT_MAPPER.readValue(
+                                    response.body(),
+                                    new TypeReference<List<Transaction>>() { });
+                        } catch (IOException parsingFailure) {
+                            throw new CompletionException(parsingFailure);
+                        }
+                    });
+        }
 
-            return OBJECT_MAPPER.readValue(
-                    response.body(),
-                    new TypeReference<List<Transaction>>() { });
+        private byte[] toUtf8(String value) {
+            return value.getBytes(StandardCharsets.UTF_8);
         }
 
         private String encode(String value) {

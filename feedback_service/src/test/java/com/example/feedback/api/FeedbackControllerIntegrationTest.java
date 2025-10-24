@@ -49,18 +49,18 @@ class FeedbackControllerIntegrationTest {
     @Test
     void listFeedback_returnsNewestFirstWithNullOptionalFields() {
         FeedbackRequest firstRequest = new FeedbackRequest(
-                2,
+                4,
+                "good but expensive",
+                "John Doe",
+                "MacBook Air",
+                "Online Trade LLC"
+        );
+        FeedbackRequest secondRequest = new FeedbackRequest(
+                4,
                 null,
                 null,
                 "Blue duct tape",
                 "99 Cents & Co."
-        );
-        FeedbackRequest secondRequest = new FeedbackRequest(
-                5,
-                "Fantastic",
-                "Alice",
-                "MacBook Air",
-                "Online Trade LLC"
         );
 
         URI firstLocation = restTemplate.postForLocation("/feedback", firstRequest);
@@ -73,11 +73,18 @@ class FeedbackControllerIntegrationTest {
         assertThat(responses).isNotNull();
         assertThat(responses).hasSizeGreaterThanOrEqualTo(2);
         assertThat(responses[0].id()).isEqualTo(extractId(secondLocation));
-        assertThat(responses[0].feedback()).isEqualTo("Fantastic");
-        assertThat(responses[0].customer()).isEqualTo("Alice");
+        assertThat(responses[0].rating()).isEqualTo(4);
+        assertThat(responses[0].feedback()).isNull();
+        assertThat(responses[0].customer()).isNull();
+        assertThat(responses[0].product()).isEqualTo("Blue duct tape");
+        assertThat(responses[0].vendor()).isEqualTo("99 Cents & Co.");
+
         assertThat(responses[1].id()).isEqualTo(extractId(firstLocation));
-        assertThat(responses[1].feedback()).isNull();
-        assertThat(responses[1].customer()).isNull();
+        assertThat(responses[1].rating()).isEqualTo(4);
+        assertThat(responses[1].feedback()).isEqualTo("good but expensive");
+        assertThat(responses[1].customer()).isEqualTo("John Doe");
+        assertThat(responses[1].product()).isEqualTo("MacBook Air");
+        assertThat(responses[1].vendor()).isEqualTo("Online Trade LLC");
     }
 
     @Test

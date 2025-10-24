@@ -3,12 +3,16 @@ package com.example.feedback.api;
 import com.example.feedback.data.FeedbackDocument;
 import com.example.feedback.data.FeedbackRepository;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,9 +46,36 @@ public class FeedbackController {
     }
 
     @GetMapping
-    public List<FeedbackResponse> getAllFeedback() {
-        return repository.findAll(Sort.by(Sort.Direction.DESC, "_id")).stream()
+    public FeedbackPageResponse getAllFeedback(
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "perPage", required = false) Integer perPage
+    ) {
+        int sanitizedPage = page == null ? 1 : page;
+        if (sanitizedPage < 1) {
+            sanitizedPage = 1;
+        }
+
+        int sanitizedPerPage = perPage == null ? 10 : perPage;
+        if (sanitizedPerPage < 5 || sanitizedPerPage > 20) {
+            sanitizedPerPage = 10;
+        }
+
+        Pageable pageable = PageRequest.of(
+                sanitizedPage - 1,
+                sanitizedPerPage,
+                Sort.by(Sort.Direction.DESC, "_id")
+        );
+
+        Page<FeedbackDocument> feedbackPage = repository.findAll(pageable);
+        List<FeedbackResponse> documents = feedbackPage.getContent().stream()
                 .map(FeedbackResponse::fromDocument)
                 .toList();
+
+        return new FeedbackPageResponse(
+                feedbackPage.getTotalElements(),
+                feedbackPage.isFirst(),
+                feedbackPage.isLast(),
+                documents
+        );
     }
 }

@@ -1,0 +1,196 @@
+package org.hyperskill.remotenews;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class Application {
+    private static final int PORT = 8080;
+    private static final String SERVER_ONE = "http://localhost:8888";
+    private static final String SERVER_TWO = "http://localhost:8889";
+    private static final String TRANSACTIONS_PATH = "/transactions";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    public static void main(String[] args) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
+        HttpClient client = HttpClient.newHttpClient();
+
+        server.createContext("/aggregate", new AggregateHandler(client));
+        server.setExecutor(null);
+        server.start();
+    }
+
+    private static class AggregateHandler implements HttpHandler {
+        private final HttpClient client;
+
+        private AggregateHandler(HttpClient client) {
+            this.client = client;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+                return;
+            }
+
+            String account = extractAccount(exchange.getRequestURI().getQuery());
+            if (account == null || account.isBlank()) {
+                byte[] error = "Missing account parameter".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(400, error.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(error);
+                }
+                return;
+            }
+
+            try {
+                List<Transaction> transactions = new ArrayList<>();
+                transactions.addAll(fetchTransactions(SERVER_ONE, account));
+                transactions.addAll(fetchTransactions(SERVER_TWO, account));
+
+                transactions.sort(Comparator.comparing(
+                        Transaction::timestampAsInstant,
+                        Comparator.nullsLast(Comparator.reverseOrder())));
+
+                String responseBody = OBJECT_MAPPER.writeValueAsString(transactions);
+                byte[] responseBytes = responseBody.getBytes(StandardCharsets.UTF_8);
+
+                exchange.getResponseHeaders().set("Content-Type", "application/json;charset=UTF-8");
+                exchange.sendResponseHeaders(200, responseBytes.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(responseBytes);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                exchange.sendResponseHeaders(500, -1);
+                exchange.close();
+            } catch (IOException e) {
+                exchange.sendResponseHeaders(500, -1);
+                exchange.close();
+            }
+        }
+
+        private List<Transaction> fetchTransactions(String serverBaseUrl, String account)
+                throws IOException, InterruptedException {
+            String encodedAccount = URLEncoder.encode(account, StandardCharsets.UTF_8);
+            URI requestUri = URI.create(serverBaseUrl + TRANSACTIONS_PATH + "?account=" + encodedAccount);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(requestUri)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            return OBJECT_MAPPER.readValue(response.body(), new TypeReference<List<Transaction>>() { });
+        }
+
+        private String extractAccount(String query) {
+            if (query == null || query.isBlank()) {
+                return null;
+            }
+
+            Map<String, String> params = parseQuery(query);
+            return params.get("account");
+        }
+
+        private Map<String, String> parseQuery(String query) {
+            return java.util.Arrays.stream(query.split("&"))
+                    .map(pair -> pair.split("=", 2))
+                    .filter(parts -> parts.length > 0 && !parts[0].isEmpty())
+                    .collect(Collectors.toMap(
+                            parts -> decode(parts[0]),
+                            parts -> parts.length > 1 ? decode(parts[1]) : "",
+                            (first, second) -> second
+                    ));
+        }
+
+        private String decode(String value) {
+            return URLDecoder.decode(value, StandardCharsets.UTF_8);
+        }
+    }
+
+    public static class Transaction {
+        private String id;
+        private String serverId;
+        private String account;
+        private String amount;
+        private String timestamp;
+
+        public Transaction() {
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getServerId() {
+            return serverId;
+        }
+
+        public void setServerId(String serverId) {
+            this.serverId = serverId;
+        }
+
+        public String getAccount() {
+            return account;
+        }
+
+        public void setAccount(String account) {
+            this.account = account;
+        }
+
+        public String getAmount() {
+            return amount;
+        }
+
+        public void setAmount(String amount) {
+            this.amount = amount;
+        }
+
+        public String getTimestamp() {
+            return timestamp;
+        }
+
+        public void setTimestamp(String timestamp) {
+            this.timestamp = timestamp;
+        }
+
+        private Instant timestampAsInstant() {
+            if (timestamp == null) {
+                return null;
+            }
+
+            try {
+                return Instant.parse(timestamp);
+            } catch (DateTimeParseException e) {
+                return null;
+            }
+        }
+    }
+}

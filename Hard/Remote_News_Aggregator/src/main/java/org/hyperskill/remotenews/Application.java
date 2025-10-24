@@ -11,7 +11,6 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -19,12 +18,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 
 public class Application {
@@ -65,54 +61,47 @@ public class Application {
                     return;
                 }
 
-                CompletableFuture<List<Transaction>> first = fetchTransactionsAsync(SERVER_ONE, account);
-                CompletableFuture<List<Transaction>> second = fetchTransactionsAsync(SERVER_TWO, account);
+                List<Transaction> merged = new ArrayList<>();
+                merged.addAll(fetchTransactions(SERVER_ONE, account));
+                merged.addAll(fetchTransactions(SERVER_TWO, account));
 
-                List<Transaction> transactions = first.thenCombine(second, (left, right) -> {
-                    List<Transaction> merged = new ArrayList<>(left.size() + right.size());
-                    merged.addAll(left);
-                    merged.addAll(right);
-                    merged.sort(Comparator.comparing(
-                            Transaction::timestampAsInstant,
-                            Comparator.nullsLast(Comparator.reverseOrder())));
-                    return merged;
-                }).join();
+                merged.sort(Comparator.comparing(
+                        Transaction::timestampAsInstant,
+                        Comparator.nullsLast(Comparator.reverseOrder())));
 
-                byte[] responseBytes = OBJECT_MAPPER.writeValueAsBytes(transactions);
+                byte[] responseBytes = OBJECT_MAPPER.writeValueAsBytes(merged);
                 sendResponse(exchange, 200, responseBytes, "application/json;charset=UTF-8");
-            } catch (CompletionException e) {
-                sendResponse(exchange, 500, null, null);
             } catch (IOException e) {
+                sendResponse(exchange, 500, null, null);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 sendResponse(exchange, 500, null, null);
             } finally {
                 exchange.close();
             }
         }
 
-        private CompletableFuture<List<Transaction>> fetchTransactionsAsync(String serverBaseUrl, String account) {
-            String encodedAccount = URLEncoder.encode(account, StandardCharsets.UTF_8);
-            URI requestUri = URI.create(serverBaseUrl + TRANSACTIONS_PATH + "?account=" + encodedAccount);
+        private List<Transaction> fetchTransactions(String serverBaseUrl, String account) throws IOException, InterruptedException {
+            URI requestUri = URI.create(serverBaseUrl + TRANSACTIONS_PATH + "?account=" + encode(account));
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(requestUri)
                     .GET()
                     .build();
 
-            return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenApply(response -> {
-                        if (response.statusCode() != 200) {
-                            return Collections.<Transaction>emptyList();
-                        }
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-                        try {
-                            return OBJECT_MAPPER.readValue(
-                                    response.body(),
-                                    new TypeReference<List<Transaction>>() { });
-                        } catch (IOException e) {
-                            return Collections.<Transaction>emptyList();
-                        }
-                    })
-                    .exceptionally(ignored -> Collections.<Transaction>emptyList());
+            if (response.statusCode() != 200) {
+                throw new IOException("Unexpected status " + response.statusCode());
+            }
+
+            return OBJECT_MAPPER.readValue(
+                    response.body(),
+                    new TypeReference<List<Transaction>>() { });
+        }
+
+        private String encode(String value) {
+            return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
         }
 
         private void sendResponse(HttpExchange exchange, int statusCode, byte[] body, String contentType) throws IOException {

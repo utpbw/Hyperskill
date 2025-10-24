@@ -315,17 +315,33 @@ class FeedbackControllerIntegrationTest {
     }
 
     @Test
-    void listFeedback_withFiltersYieldingNoMatches_returnsEmptyResult() {
+    void listFeedback_withFiltersMatchingNoDocuments_returnsEmptyFirstPage() {
         restTemplate.postForLocation("/feedback", new FeedbackRequest(
-                3,
-                "average",
-                "Chris",
-                "Generic product",
-                "General Store"
+                4,
+                "good but expensive",
+                "John Doe",
+                "MacBook Air",
+                "Online Trade LLC"
+        ));
+        restTemplate.postForLocation("/feedback", new FeedbackRequest(
+                4,
+                null,
+                null,
+                "Blue duct tape",
+                "99 Cents & Co."
         ));
 
+        URI requestUri = UriComponentsBuilder.fromPath("/feedback")
+                .queryParam("page", 1)
+                .queryParam("perPage", 5)
+                .queryParam("customer", "John Doe")
+                .queryParam("rating", 5)
+                .queryParam("product", "Blue duct tape")
+                .build()
+                .toUri();
+
         ResponseEntity<FeedbackPageResponse> response = restTemplate.getForEntity(
-                "/feedback?rating=5&customer=Alex",
+                requestUri,
                 FeedbackPageResponse.class
         );
 

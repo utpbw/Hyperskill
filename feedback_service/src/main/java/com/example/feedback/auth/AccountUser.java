@@ -46,6 +46,12 @@ public class AccountUser {
     @Enumerated(EnumType.STRING)
     private Set<UserRole> roles = new HashSet<>();
 
+    @Column(nullable = false)
+    private boolean locked = false;
+
+    @Column(name = "failed_attempts", nullable = false)
+    private int failedAttempts = 0;
+
     public Long getId() {
         return id;
     }
@@ -92,5 +98,21 @@ public class AccountUser {
 
     public void setRoles(Set<UserRole> roles) {
         this.roles = roles;
+    }
+
+    public boolean isLocked() {
+        return locked;
+    }
+
+    public void setLocked(boolean locked) {
+        this.locked = locked;
+    }
+
+    public int getFailedAttempts() {
+        return failedAttempts;
+    }
+
+    public void setFailedAttempts(int failedAttempts) {
+        this.failedAttempts = failedAttempts;
     }
 }

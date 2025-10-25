@@ -1,15 +1,19 @@
 package com.example.feedback.auth;
 
 import com.example.feedback.accounting.EmployeePayrollResponse;
+import com.example.feedback.accounting.PayrollRecordRepository;
 import com.example.feedback.accounting.PayrollRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
@@ -26,6 +30,21 @@ class AuthControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private AccountUserRepository accountUserRepository;
+
+    @Autowired
+    private PayrollRecordRepository payrollRecordRepository;
+
+    private static final String ADMIN_EMAIL = "admin@acme.com";
+    private static final String ADMIN_PASSWORD = "Adm1nPassword123";
+
+    @BeforeEach
+    void cleanDatabase() {
+        payrollRecordRepository.deleteAll();
+        accountUserRepository.deleteAll();
+    }
+
     private Map<?, ?> parseBody(ResponseEntity<String> response) {
         try {
             return objectMapper.readValue(response.getBody(), Map.class);
@@ -34,7 +53,11 @@ class AuthControllerIntegrationTest {
         }
     }
 
-    private SignupResponse registerUser(String email, String password) {
+    private void registerDefaultAdmin() {
+        registerUser(ADMIN_EMAIL, ADMIN_PASSWORD);
+    }
+
+    private UserResponse registerUser(String email, String password) {
         SignupRequest request = new SignupRequest(
                 "John",
                 "Doe",
@@ -42,16 +65,49 @@ class AuthControllerIntegrationTest {
                 password
         );
 
-        ResponseEntity<SignupResponse> response = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> response = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        SignupResponse body = response.getBody();
+        UserResponse body = response.getBody();
         assertThat(body).isNotNull();
         return body;
+    }
+
+    private <T> ResponseEntity<T> exchangeRole(String adminEmail, String adminPassword, RoleUpdateRequest request, Class<T> responseType) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        return restTemplate
+                .withBasicAuth(adminEmail, adminPassword)
+                .exchange(
+                        "/api/admin/user/role",
+                        HttpMethod.PUT,
+                        new HttpEntity<>(request, headers),
+                        responseType
+                );
+    }
+
+    private UserResponse grantRole(String adminEmail, String adminPassword, String userEmail, String role) {
+        RoleUpdateRequest request = new RoleUpdateRequest(userEmail, role, RoleOperation.GRANT);
+        ResponseEntity<UserResponse> response = exchangeRole(adminEmail, adminPassword, request, UserResponse.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        return response.getBody();
+    }
+
+    private ResponseEntity<UserDeletionResponse> deleteUser(String adminEmail, String adminPassword, String email) {
+        return restTemplate
+                .withBasicAuth(adminEmail, adminPassword)
+                .exchange(
+                        "/api/admin/user/" + email,
+                        HttpMethod.DELETE,
+                        HttpEntity.EMPTY,
+                        UserDeletionResponse.class
+                );
     }
 
     @Test
@@ -63,19 +119,20 @@ class AuthControllerIntegrationTest {
                 "password12345"
         );
 
-        ResponseEntity<SignupResponse> response = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> response = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        SignupResponse body = response.getBody();
+        UserResponse body = response.getBody();
         assertThat(body).isNotNull();
         assertThat(body.id()).isNotNull();
         assertThat(body.name()).isEqualTo("John");
         assertThat(body.lastname()).isEqualTo("Doe");
         assertThat(body.email()).isEqualTo("john.doe@acme.com");
+        assertThat(body.roles()).containsExactly("ROLE_ADMINISTRATOR");
     }
 
     @Test
@@ -123,10 +180,10 @@ class AuthControllerIntegrationTest {
                 "password12345"
         );
 
-        ResponseEntity<SignupResponse> firstResponse = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> firstResponse = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(firstResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -189,6 +246,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void payment_withoutRecords_returnsEmptyList() {
+        registerDefaultAdmin();
         registerUser("alice.smith@acme.com", "strongpassword");
 
         ResponseEntity<EmployeePayrollResponse[]> response = restTemplate
@@ -203,14 +261,18 @@ class AuthControllerIntegrationTest {
 
     @Test
     void uploadPayments_withValidRequest_persistsPayroll() {
+        registerDefaultAdmin();
         registerUser("jane.payroll@acme.com", "verystrongpass");
+        grantRole(ADMIN_EMAIL, ADMIN_PASSWORD, "jane.payroll@acme.com", "ACCOUNTANT");
 
         PayrollRequest payroll = new PayrollRequest("jane.payroll@acme.com", "01-2024", 1_000_00L);
-        ResponseEntity<Map> response = restTemplate.postForEntity(
-                "/api/acct/payments",
-                List.of(payroll),
-                Map.class
-        );
+        ResponseEntity<Map> response = restTemplate
+                .withBasicAuth("jane.payroll@acme.com", "verystrongpass")
+                .postForEntity(
+                        "/api/acct/payments",
+                        List.of(payroll),
+                        Map.class
+                );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull().containsEntry("status", "Added successfully!");
@@ -229,22 +291,28 @@ class AuthControllerIntegrationTest {
 
     @Test
     void uploadPayments_withDuplicatePeriod_returnsBadRequest() {
+        registerDefaultAdmin();
         registerUser("duplicate@acme.com", "anotherstrongpass");
+        grantRole(ADMIN_EMAIL, ADMIN_PASSWORD, "duplicate@acme.com", "ACCOUNTANT");
 
         PayrollRequest payroll = new PayrollRequest("duplicate@acme.com", "02-2024", 120_000L);
-        ResponseEntity<Map> firstResponse = restTemplate.postForEntity(
-                "/api/acct/payments",
-                List.of(payroll),
-                Map.class
-        );
+        ResponseEntity<Map> firstResponse = restTemplate
+                .withBasicAuth("duplicate@acme.com", "anotherstrongpass")
+                .postForEntity(
+                        "/api/acct/payments",
+                        List.of(payroll),
+                        Map.class
+                );
 
         assertThat(firstResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        ResponseEntity<String> secondResponse = restTemplate.postForEntity(
-                "/api/acct/payments",
-                List.of(payroll),
-                String.class
-        );
+        ResponseEntity<String> secondResponse = restTemplate
+                .withBasicAuth("duplicate@acme.com", "anotherstrongpass")
+                .postForEntity(
+                        "/api/acct/payments",
+                        List.of(payroll),
+                        String.class
+                );
 
         assertThat(secondResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         Map<?, ?> body = parseBody(secondResponse);
@@ -253,13 +321,19 @@ class AuthControllerIntegrationTest {
 
     @Test
     void uploadPayments_withUnknownEmployee_returnsBadRequest() {
+        registerDefaultAdmin();
+        registerUser("accountant@acme.com", "accPassStrong");
+        grantRole(ADMIN_EMAIL, ADMIN_PASSWORD, "accountant@acme.com", "ACCOUNTANT");
+
         PayrollRequest payroll = new PayrollRequest("unknown@acme.com", "03-2024", 500_00L);
 
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                "/api/acct/payments",
-                List.of(payroll),
-                String.class
-        );
+        ResponseEntity<String> response = restTemplate
+                .withBasicAuth("accountant@acme.com", "accPassStrong")
+                .postForEntity(
+                        "/api/acct/payments",
+                        List.of(payroll),
+                        String.class
+                );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         Map<?, ?> body = parseBody(response);
@@ -268,18 +342,22 @@ class AuthControllerIntegrationTest {
 
     @Test
     void uploadPayments_withMultipleValidationErrors_returnsAggregatedMessage() {
+        registerDefaultAdmin();
         registerUser("aggregate@acme.com", "averysecurepwd");
+        grantRole(ADMIN_EMAIL, ADMIN_PASSWORD, "aggregate@acme.com", "ACCOUNTANT");
 
         List<PayrollRequest> payload = List.of(
                 new PayrollRequest("aggregate@acme.com", "01-2024", -1L),
                 new PayrollRequest("aggregate@acme.com", "13-2024", 1_000_00L)
         );
 
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                "/api/acct/payments",
-                payload,
-                String.class
-        );
+        ResponseEntity<String> response = restTemplate
+                .withBasicAuth("aggregate@acme.com", "averysecurepwd")
+                .postForEntity(
+                        "/api/acct/payments",
+                        payload,
+                        String.class
+                );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         Map<?, ?> body = parseBody(response);
@@ -289,23 +367,31 @@ class AuthControllerIntegrationTest {
 
     @Test
     void updatePayments_withValidRequest_updatesSalary() {
+        registerDefaultAdmin();
         registerUser("update@acme.com", "superstrongpass");
+        grantRole(ADMIN_EMAIL, ADMIN_PASSWORD, "update@acme.com", "ACCOUNTANT");
         PayrollRequest initial = new PayrollRequest("update@acme.com", "04-2024", 100_00L);
 
-        ResponseEntity<Map> uploadResponse = restTemplate.postForEntity(
-                "/api/acct/payments",
-                List.of(initial),
-                Map.class
-        );
+        ResponseEntity<Map> uploadResponse = restTemplate
+                .withBasicAuth("update@acme.com", "superstrongpass")
+                .postForEntity(
+                        "/api/acct/payments",
+                        List.of(initial),
+                        Map.class
+                );
         assertThat(uploadResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         PayrollRequest update = new PayrollRequest("update@acme.com", "04-2024", 150_00L);
-        ResponseEntity<Map> updateResponse = restTemplate.exchange(
-                "/api/acct/payments",
-                HttpMethod.PUT,
-                new HttpEntity<>(update),
-                Map.class
-        );
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<Map> updateResponse = restTemplate
+                .withBasicAuth("update@acme.com", "superstrongpass")
+                .exchange(
+                        "/api/acct/payments",
+                        HttpMethod.PUT,
+                        new HttpEntity<>(update, headers),
+                        Map.class
+                );
 
         assertThat(updateResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(updateResponse.getBody()).isNotNull().containsEntry("status", "Updated successfully!");
@@ -322,6 +408,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void getPayments_withInvalidPeriodFormat_returnsBadRequest() {
+        registerDefaultAdmin();
         registerUser("invalid.period@acme.com", "yetanotherstrongpass");
 
         ResponseEntity<String> response = restTemplate
@@ -335,6 +422,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void payment_withDifferentEmailCase_authenticatesSuccessfully() {
+        registerDefaultAdmin();
         SignupRequest request = new SignupRequest(
                 "Bob",
                 "Stone",
@@ -342,10 +430,10 @@ class AuthControllerIntegrationTest {
                 "topsecretpass"
         );
 
-        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> signupResponse = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -365,6 +453,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void payment_withWrongPassword_returnsUnauthorizedErrorBody() throws Exception {
+        registerDefaultAdmin();
         SignupRequest request = new SignupRequest(
                 "Carol",
                 "Mills",
@@ -372,10 +461,10 @@ class AuthControllerIntegrationTest {
                 "pass1234secure"
         );
 
-        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> signupResponse = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -397,6 +486,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void changePassword_withValidRequest_updatesPassword() {
+        registerDefaultAdmin();
         SignupRequest request = new SignupRequest(
                 "Diane",
                 "Evans",
@@ -404,10 +494,10 @@ class AuthControllerIntegrationTest {
                 "initialPass123"
         );
 
-        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> signupResponse = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -448,6 +538,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void changePassword_withShortPassword_returnsBadRequest() {
+        registerDefaultAdmin();
         SignupRequest request = new SignupRequest(
                 "Ethan",
                 "Frost",
@@ -455,10 +546,10 @@ class AuthControllerIntegrationTest {
                 "validPassword123"
         );
 
-        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> signupResponse = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -481,6 +572,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void changePassword_withBreachedPassword_returnsBadRequest() {
+        registerDefaultAdmin();
         SignupRequest request = new SignupRequest(
                 "Grace",
                 "Hall",
@@ -488,10 +580,10 @@ class AuthControllerIntegrationTest {
                 "validPassword456"
         );
 
-        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> signupResponse = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -514,6 +606,7 @@ class AuthControllerIntegrationTest {
 
     @Test
     void changePassword_withSamePassword_returnsBadRequest() {
+        registerDefaultAdmin();
         SignupRequest request = new SignupRequest(
                 "Holly",
                 "Irwin",
@@ -521,10 +614,10 @@ class AuthControllerIntegrationTest {
                 "duplicatePass123"
         );
 
-        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+        ResponseEntity<UserResponse> signupResponse = restTemplate.postForEntity(
                 "/api/auth/signup",
                 request,
-                SignupResponse.class
+                UserResponse.class
         );
 
         assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -543,6 +636,174 @@ class AuthControllerIntegrationTest {
         assertThat(body.get("error")).isEqualTo("Bad Request");
         assertThat(body.get("message")).isEqualTo("The passwords must be different!");
         assertThat(body.get("path")).isEqualTo("/api/auth/changepass");
+    }
+
+    @Test
+    void admin_getUsers_returnsSortedUsersWithRoles() {
+        registerDefaultAdmin();
+        registerUser("user.one@acme.com", "StrongPass1234");
+        registerUser("user.two@acme.com", "StrongPass5678");
+
+        ResponseEntity<UserResponse[]> response = restTemplate
+                .withBasicAuth(ADMIN_EMAIL, ADMIN_PASSWORD)
+                .getForEntity("/api/admin/user", UserResponse[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        UserResponse[] users = response.getBody();
+        assertThat(users).isNotNull();
+        assertThat(users).hasSize(3);
+        assertThat(users[0].email()).isEqualTo(ADMIN_EMAIL);
+        assertThat(users[0].roles()).containsExactly("ROLE_ADMINISTRATOR");
+        assertThat(users[1].email()).isEqualTo("user.one@acme.com");
+        assertThat(users[1].roles()).containsExactly("ROLE_USER");
+        assertThat(users[2].email()).isEqualTo("user.two@acme.com");
+        assertThat(users[2].roles()).containsExactly("ROLE_USER");
+    }
+
+    @Test
+    void admin_deleteUser_removesUserSuccessfully() {
+        registerDefaultAdmin();
+        registerUser("delete.me@acme.com", "DeletePass123");
+
+        ResponseEntity<UserDeletionResponse> deleteResponse = deleteUser(ADMIN_EMAIL, ADMIN_PASSWORD, "delete.me@acme.com");
+        assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        UserDeletionResponse body = deleteResponse.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.user()).isEqualTo("delete.me@acme.com");
+        assertThat(body.status()).isEqualTo("Deleted successfully!");
+
+        ResponseEntity<UserResponse[]> remaining = restTemplate
+                .withBasicAuth(ADMIN_EMAIL, ADMIN_PASSWORD)
+                .getForEntity("/api/admin/user", UserResponse[].class);
+        assertThat(remaining.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(remaining.getBody()).isNotNull().hasSize(1);
+        assertThat(remaining.getBody()[0].email()).isEqualTo(ADMIN_EMAIL);
+    }
+
+    @Test
+    void admin_deleteUser_nonExistingUserReturnsNotFound() {
+        registerDefaultAdmin();
+
+        ResponseEntity<String> response = restTemplate
+                .withBasicAuth(ADMIN_EMAIL, ADMIN_PASSWORD)
+                .exchange(
+                        "/api/admin/user/missing@acme.com",
+                        HttpMethod.DELETE,
+                        HttpEntity.EMPTY,
+                        String.class
+                );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("message")).isEqualTo("User not found!");
+        assertThat(body.get("path")).isEqualTo("/api/admin/user/missing@acme.com");
+    }
+
+    @Test
+    void admin_deleteUser_cannotRemoveAdministrator() {
+        registerDefaultAdmin();
+
+        ResponseEntity<String> response = restTemplate
+                .withBasicAuth(ADMIN_EMAIL, ADMIN_PASSWORD)
+                .exchange(
+                        "/api/admin/user/" + ADMIN_EMAIL,
+                        HttpMethod.DELETE,
+                        HttpEntity.EMPTY,
+                        String.class
+                );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("message")).isEqualTo("Can't remove ADMINISTRATOR role!");
+        assertThat(body.get("path")).isEqualTo("/api/admin/user/" + ADMIN_EMAIL);
+    }
+
+    @Test
+    void admin_updateUserRole_grantAndRemoveRoles() {
+        registerDefaultAdmin();
+        registerUser("accountant.role@acme.com", "AccountantPass123");
+
+        UserResponse afterGrant = grantRole(ADMIN_EMAIL, ADMIN_PASSWORD, "accountant.role@acme.com", "ACCOUNTANT");
+        assertThat(afterGrant.roles()).containsExactly("ROLE_ACCOUNTANT", "ROLE_USER");
+
+        RoleUpdateRequest removeRequest = new RoleUpdateRequest("accountant.role@acme.com", "ACCOUNTANT", RoleOperation.REMOVE);
+        ResponseEntity<UserResponse> removeResponse = exchangeRole(ADMIN_EMAIL, ADMIN_PASSWORD, removeRequest, UserResponse.class);
+        assertThat(removeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(removeResponse.getBody()).isNotNull();
+        assertThat(removeResponse.getBody().roles()).containsExactly("ROLE_USER");
+    }
+
+    @Test
+    void admin_updateUserRole_preventsMixingAdministrativeAndBusinessRoles() {
+        registerDefaultAdmin();
+        registerUser("business.role@acme.com", "BusinessPass123");
+
+        RoleUpdateRequest request = new RoleUpdateRequest("business.role@acme.com", "ADMINISTRATOR", RoleOperation.GRANT);
+        ResponseEntity<String> response = exchangeRole(ADMIN_EMAIL, ADMIN_PASSWORD, request, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("message")).isEqualTo("The user cannot combine administrative and business roles!");
+        assertThat(body.get("path")).isEqualTo("/api/admin/user/role");
+    }
+
+    @Test
+    void admin_updateUserRole_roleNotFoundReturnsNotFound() {
+        registerDefaultAdmin();
+        registerUser("unknown.role@acme.com", "UnknownPass123");
+
+        RoleUpdateRequest request = new RoleUpdateRequest("unknown.role@acme.com", "MANAGER", RoleOperation.GRANT);
+        ResponseEntity<String> response = exchangeRole(ADMIN_EMAIL, ADMIN_PASSWORD, request, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("message")).isEqualTo("Role not found!");
+        assertThat(body.get("path")).isEqualTo("/api/admin/user/role");
+    }
+
+    @Test
+    void admin_updateUserRole_removeNonExistingRoleReturnsBadRequest() {
+        registerDefaultAdmin();
+        registerUser("no.role@acme.com", "NoRolePass123");
+
+        RoleUpdateRequest request = new RoleUpdateRequest("no.role@acme.com", "ACCOUNTANT", RoleOperation.REMOVE);
+        ResponseEntity<String> response = exchangeRole(ADMIN_EMAIL, ADMIN_PASSWORD, request, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("message")).isEqualTo("The user does not have a role!");
+        assertThat(body.get("path")).isEqualTo("/api/admin/user/role");
+    }
+
+    @Test
+    void admin_updateUserRole_removeLastRoleReturnsBadRequest() {
+        registerDefaultAdmin();
+        registerUser("single.role@acme.com", "SingleRolePass123");
+
+        RoleUpdateRequest request = new RoleUpdateRequest("single.role@acme.com", "USER", RoleOperation.REMOVE);
+        ResponseEntity<String> response = exchangeRole(ADMIN_EMAIL, ADMIN_PASSWORD, request, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("message")).isEqualTo("The user must have at least one role!");
+        assertThat(body.get("path")).isEqualTo("/api/admin/user/role");
+    }
+
+    @Test
+    void admin_accessDeniedForNonAdminUser_returnsForbiddenErrorBody() {
+        registerDefaultAdmin();
+        registerUser("regular.user@acme.com", "RegularPass123");
+
+        ResponseEntity<String> response = restTemplate
+                .withBasicAuth("regular.user@acme.com", "RegularPass123")
+                .getForEntity("/api/admin/user", String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("status")).isEqualTo(403);
+        assertThat(body.get("error")).isEqualTo("Forbidden");
+        assertThat(body.get("message")).isEqualTo("Access Denied!");
+        assertThat(body.get("path")).isEqualTo("/api/admin/user");
     }
 
     @Test

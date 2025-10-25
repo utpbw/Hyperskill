@@ -71,12 +71,21 @@ public class TokenService {
         }
 
         Claims claims = parseClaims(token);
+        Instant now = Instant.now();
+
+        Date expirationDate = claims.getExpiration();
+        if (expirationDate == null || expirationDate.toInstant().isBefore(now)) {
+            throw new BadCredentialsException("Bearer token expired");
+        }
+
         String subject = claims.getSubject();
         if (subject == null || subject.isBlank()) {
             throw new BadCredentialsException("Token subject missing");
         }
 
-        AccountUser user = repository.findByEmailIgnoreCase(subject)
+        String normalizedSubject = subject.trim().toLowerCase(Locale.ROOT);
+
+        AccountUser user = repository.findByEmailIgnoreCase(normalizedSubject)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
         if (user.isLocked()) {

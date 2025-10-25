@@ -36,6 +36,8 @@ public class SecurityConfiguration {
                 .headers(headers -> headers.frameOptions().disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/signup").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/acct/payments").permitAll()
+                        .requestMatchers(HttpMethod.PUT, "/api/acct/payments").permitAll()
                         .requestMatchers("/api/feedback", "/api/feedback/**").permitAll()
                         .requestMatchers("/feedback", "/feedback/**").permitAll()
                         .requestMatchers("/h2-console/**").permitAll()

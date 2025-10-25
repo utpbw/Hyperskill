@@ -1,13 +1,18 @@
 package com.example.feedback.auth;
 
+import com.example.feedback.accounting.EmployeePayrollResponse;
+import com.example.feedback.accounting.PayrollRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,13 +34,33 @@ class AuthControllerIntegrationTest {
         }
     }
 
+    private SignupResponse registerUser(String email, String password) {
+        SignupRequest request = new SignupRequest(
+                "John",
+                "Doe",
+                email,
+                password
+        );
+
+        ResponseEntity<SignupResponse> response = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        SignupResponse body = response.getBody();
+        assertThat(body).isNotNull();
+        return body;
+    }
+
     @Test
     void signup_withValidRequest_returnsCreatedUserDetails() {
         SignupRequest request = new SignupRequest(
                 "John",
                 "Doe",
                 "john.doe@acme.com",
-                "password1234"
+                "password12345"
         );
 
         ResponseEntity<SignupResponse> response = restTemplate.postForEntity(
@@ -59,7 +84,7 @@ class AuthControllerIntegrationTest {
                 "John",
                 "Doe",
                 "john.doe@gmail.com",
-                "password1234"
+                "password12345"
         );
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -95,7 +120,7 @@ class AuthControllerIntegrationTest {
                 "Jane",
                 "Doe",
                 "jane.doe@acme.com",
-                "password1234"
+                "password12345"
         );
 
         ResponseEntity<SignupResponse> firstResponse = restTemplate.postForEntity(
@@ -163,38 +188,128 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
-    void payment_withAuthentication_returnsCurrentUserDetails() {
-        SignupRequest request = new SignupRequest(
-                "Alice",
-                "Smith",
-                "alice.smith@acme.com",
-                "strongpassword"
-        );
+    void payment_withoutRecords_returnsEmptyList() {
+        registerUser("alice.smith@acme.com", "strongpassword");
 
-        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
-                "/api/auth/signup",
-                request,
-                SignupResponse.class
-        );
-
-        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-        SignupResponse createdUser = signupResponse.getBody();
-        assertThat(createdUser).isNotNull();
-
-        ResponseEntity<SignupResponse> paymentResponse = restTemplate
+        ResponseEntity<EmployeePayrollResponse[]> response = restTemplate
                 .withBasicAuth("alice.smith@acme.com", "strongpassword")
-                .getForEntity(
-                        "/api/empl/payment/",
-                        SignupResponse.class
-                );
+                .getForEntity("/api/empl/payment", EmployeePayrollResponse[].class);
 
-        assertThat(paymentResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-        SignupResponse paymentBody = paymentResponse.getBody();
-        assertThat(paymentBody).isNotNull();
-        assertThat(paymentBody.id()).isEqualTo(createdUser.id());
-        assertThat(paymentBody.name()).isEqualTo("Alice");
-        assertThat(paymentBody.lastname()).isEqualTo("Smith");
-        assertThat(paymentBody.email()).isEqualTo("alice.smith@acme.com");
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        EmployeePayrollResponse[] body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body).isEmpty();
+    }
+
+    @Test
+    void uploadPayments_withValidRequest_persistsPayroll() {
+        registerUser("jane.payroll@acme.com", "verystrongpass");
+
+        PayrollRequest payroll = new PayrollRequest("jane.payroll@acme.com", "01-2024", 1_000_00L);
+        ResponseEntity<Map> response = restTemplate.postForEntity(
+                "/api/acct/payments",
+                List.of(payroll),
+                Map.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull().containsEntry("status", "Added successfully!");
+
+        ResponseEntity<EmployeePayrollResponse[]> paymentsResponse = restTemplate
+                .withBasicAuth("jane.payroll@acme.com", "verystrongpass")
+                .getForEntity("/api/empl/payment", EmployeePayrollResponse[].class);
+
+        assertThat(paymentsResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        EmployeePayrollResponse[] payrolls = paymentsResponse.getBody();
+        assertThat(payrolls).isNotNull();
+        assertThat(payrolls).hasSize(1);
+        assertThat(payrolls[0].period()).isEqualTo("January-2024");
+        assertThat(payrolls[0].salary()).isEqualTo("1000 dollar(s) 0 cent(s)");
+    }
+
+    @Test
+    void uploadPayments_withDuplicatePeriod_returnsBadRequest() {
+        registerUser("duplicate@acme.com", "anotherstrongpass");
+
+        PayrollRequest payroll = new PayrollRequest("duplicate@acme.com", "02-2024", 120_000L);
+        ResponseEntity<Map> firstResponse = restTemplate.postForEntity(
+                "/api/acct/payments",
+                List.of(payroll),
+                Map.class
+        );
+
+        assertThat(firstResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> secondResponse = restTemplate.postForEntity(
+                "/api/acct/payments",
+                List.of(payroll),
+                String.class
+        );
+
+        assertThat(secondResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Map<?, ?> body = parseBody(secondResponse);
+        assertThat(body.get("path")).isEqualTo("/api/acct/payments");
+    }
+
+    @Test
+    void uploadPayments_withUnknownEmployee_returnsBadRequest() {
+        PayrollRequest payroll = new PayrollRequest("unknown@acme.com", "03-2024", 500_00L);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/api/acct/payments",
+                List.of(payroll),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("message")).isNotNull();
+    }
+
+    @Test
+    void updatePayments_withValidRequest_updatesSalary() {
+        registerUser("update@acme.com", "superstrongpass");
+        PayrollRequest initial = new PayrollRequest("update@acme.com", "04-2024", 100_00L);
+
+        ResponseEntity<Map> uploadResponse = restTemplate.postForEntity(
+                "/api/acct/payments",
+                List.of(initial),
+                Map.class
+        );
+        assertThat(uploadResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        PayrollRequest update = new PayrollRequest("update@acme.com", "04-2024", 150_00L);
+        ResponseEntity<Map> updateResponse = restTemplate.exchange(
+                "/api/acct/payments",
+                HttpMethod.PUT,
+                new HttpEntity<>(update),
+                Map.class
+        );
+
+        assertThat(updateResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(updateResponse.getBody()).isNotNull().containsEntry("status", "Updated successfully!");
+
+        ResponseEntity<EmployeePayrollResponse> payrollResponse = restTemplate
+                .withBasicAuth("update@acme.com", "superstrongpass")
+                .getForEntity("/api/empl/payment?period=04-2024", EmployeePayrollResponse.class);
+
+        assertThat(payrollResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        EmployeePayrollResponse payroll = payrollResponse.getBody();
+        assertThat(payroll).isNotNull();
+        assertThat(payroll.salary()).isEqualTo("150 dollar(s) 0 cent(s)");
+    }
+
+    @Test
+    void getPayments_withInvalidPeriodFormat_returnsBadRequest() {
+        registerUser("invalid.period@acme.com", "yetanotherstrongpass");
+
+        ResponseEntity<String> response = restTemplate
+                .withBasicAuth("invalid.period@acme.com", "yetanotherstrongpass")
+                .getForEntity("/api/empl/payment?period=2024-04", String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("path")).isEqualTo("/api/empl/payment");
     }
 
     @Test
@@ -214,17 +329,17 @@ class AuthControllerIntegrationTest {
 
         assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        ResponseEntity<SignupResponse> paymentResponse = restTemplate
+        ResponseEntity<EmployeePayrollResponse[]> paymentResponse = restTemplate
                 .withBasicAuth("Bob.Stone@acme.com", "topsecretpass")
                 .getForEntity(
                         "/api/empl/payment/",
-                        SignupResponse.class
+                        EmployeePayrollResponse[].class
                 );
 
         assertThat(paymentResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-        SignupResponse body = paymentResponse.getBody();
+        EmployeePayrollResponse[] body = paymentResponse.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.email()).isEqualTo("bob.stone@acme.com");
+        assertThat(body).isEmpty();
     }
 
     @Test
@@ -298,13 +413,16 @@ class AuthControllerIntegrationTest {
                 );
         assertThat(oldPasswordResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
 
-        ResponseEntity<SignupResponse> newPasswordResponse = restTemplate
+        ResponseEntity<EmployeePayrollResponse[]> newPasswordResponse = restTemplate
                 .withBasicAuth("diane.evans@acme.com", "newSecurePass123")
                 .getForEntity(
                         "/api/empl/payment/",
-                        SignupResponse.class
+                        EmployeePayrollResponse[].class
                 );
         assertThat(newPasswordResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        EmployeePayrollResponse[] payrolls = newPasswordResponse.getBody();
+        assertThat(payrolls).isNotNull();
+        assertThat(payrolls).isEmpty();
     }
 
     @Test

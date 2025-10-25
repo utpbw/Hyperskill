@@ -1,5 +1,7 @@
 package com.example.taskmanagement.tasks;
 
 public enum TaskStatus {
-    CREATED
+    CREATED,
+    IN_PROGRESS,
+    COMPLETED
 }

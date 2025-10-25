@@ -1,5 +1,6 @@
 package com.example.taskmanagement.tasks;
 
+import com.example.taskmanagement.auth.AccountUserRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -7,14 +8,20 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 @Service
 public class TaskService {
 
-    private final TaskRepository taskRepository;
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
-    public TaskService(TaskRepository taskRepository) {
+    private final TaskRepository taskRepository;
+    private final AccountUserRepository accountUserRepository;
+
+    public TaskService(TaskRepository taskRepository, AccountUserRepository accountUserRepository) {
         this.taskRepository = taskRepository;
+        this.accountUserRepository = accountUserRepository;
     }
 
     public TaskResponse createTask(TaskRequest request, String authorEmail) {
@@ -22,29 +29,114 @@ public class TaskService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user required");
         }
 
-        String normalizedAuthor = authorEmail.trim().toLowerCase(Locale.ROOT);
+        String normalizedAuthor = normalizeEmail(authorEmail);
         Task task = new Task(
                 request.title().trim(),
                 request.description().trim(),
                 normalizedAuthor,
-                TaskStatus.CREATED
+                TaskStatus.CREATED,
+                null
         );
         Task saved = taskRepository.save(task);
         return mapToResponse(saved);
     }
 
-    public List<TaskResponse> getTasks(String author) {
-        Sort sort = Sort.by(Sort.Direction.DESC, "id");
-        List<Task> tasks;
-        if (author == null || author.trim().isEmpty()) {
-            tasks = taskRepository.findAll(sort);
-        } else {
-            String normalizedAuthor = author.trim().toLowerCase(Locale.ROOT);
-            tasks = taskRepository.findAllByAuthor(normalizedAuthor, sort);
+    public TaskResponse assignTask(long taskId, TaskAssignmentRequest request, String requesterEmail) {
+        Task task = findTask(taskId);
+        String normalizedRequester = normalizeEmail(requireAuthenticatedEmail(requesterEmail));
+        if (!task.getAuthor().equals(normalizedRequester)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the author can assign the task");
         }
+
+        String assigneeInput = request.assignee();
+        if (assigneeInput == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignee must be provided");
+        }
+        String trimmedAssignee = assigneeInput.trim();
+        if (trimmedAssignee.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignee must not be blank");
+        }
+
+        if (trimmedAssignee.equalsIgnoreCase("none")) {
+            task.setAssignee(null);
+        } else {
+            if (!EMAIL_PATTERN.matcher(trimmedAssignee).matches()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignee email must be valid");
+            }
+            String normalizedAssignee = trimmedAssignee.toLowerCase(Locale.ROOT);
+            if (!accountUserRepository.existsByEmailIgnoreCase(normalizedAssignee)) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignee not found");
+            }
+            task.setAssignee(normalizedAssignee);
+        }
+
+        Task saved = taskRepository.save(task);
+        return mapToResponse(saved);
+    }
+
+    public TaskResponse updateStatus(long taskId, TaskStatusUpdateRequest request, String requesterEmail) {
+        Task task = findTask(taskId);
+        String normalizedRequester = normalizeEmail(requireAuthenticatedEmail(requesterEmail));
+
+        boolean isAuthor = task.getAuthor().equals(normalizedRequester);
+        boolean isAssignee = task.getAssignee() != null && task.getAssignee().equals(normalizedRequester);
+        if (!isAuthor && !isAssignee) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the author or assignee can change status");
+        }
+
+        task.setStatus(request.status());
+        Task saved = taskRepository.save(task);
+        return mapToResponse(saved);
+    }
+
+    public List<TaskResponse> getTasks(String author, String assignee) {
+        Sort sort = Sort.by(Sort.Direction.DESC, "id");
+        List<Task> tasks = taskRepository.findAll(sort);
+
+        String normalizedAuthor = normalizeOptionalEmail(author);
+        String normalizedAssignee = normalizeOptionalEmail(assignee);
+        boolean filterAssigneeNone = normalizedAssignee != null && normalizedAssignee.equals("none");
+
         return tasks.stream()
+                .filter(task -> normalizedAuthor == null || task.getAuthor().equals(normalizedAuthor))
+                .filter(task -> {
+                    if (normalizedAssignee == null) {
+                        return true;
+                    }
+                    if (filterAssigneeNone) {
+                        return task.getAssignee() == null;
+                    }
+                    return normalizedAssignee.equals(task.getAssignee());
+                })
                 .map(this::mapToResponse)
                 .toList();
+    }
+
+    private Task findTask(long taskId) {
+        return taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found"));
+    }
+
+    private String requireAuthenticatedEmail(String email) {
+        if (email == null || email.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user required");
+        }
+        return email;
+    }
+
+    private String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeOptionalEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+        String trimmed = email.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.toLowerCase(Locale.ROOT);
     }
 
     private TaskResponse mapToResponse(Task task) {
@@ -53,7 +145,8 @@ public class TaskService {
                 task.getTitle(),
                 task.getDescription(),
                 task.getStatus().name(),
-                task.getAuthor()
+                task.getAuthor(),
+                task.getAssignee() == null ? "none" : task.getAssignee()
         );
     }
 }

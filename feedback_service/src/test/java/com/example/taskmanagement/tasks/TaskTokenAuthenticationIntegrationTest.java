@@ -158,6 +158,22 @@ class TaskTokenAuthenticationIntegrationTest {
         assertThat(unassignedTask).isNotNull();
         assertThat(unassignedTask.assignee()).isEqualTo("none");
 
+        HttpHeaders unassignedFilterHeaders = new HttpHeaders();
+        unassignedFilterHeaders.setBearerAuth(authorToken);
+
+        ResponseEntity<TaskResponse[]> unassignedFilterResponse = restTemplate.exchange(
+                "/api/tasks?assignee=none",
+                HttpMethod.GET,
+                new HttpEntity<>(unassignedFilterHeaders),
+                TaskResponse[].class
+        );
+
+        assertThat(unassignedFilterResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TaskResponse[] unassignedFiltered = unassignedFilterResponse.getBody();
+        assertThat(unassignedFiltered).isNotNull();
+        assertThat(unassignedFiltered).hasSize(1);
+        assertThat(unassignedFiltered[0].assignee()).isEqualTo("none");
+
         HttpHeaders listHeaders = new HttpHeaders();
         listHeaders.setBearerAuth(authorToken);
 

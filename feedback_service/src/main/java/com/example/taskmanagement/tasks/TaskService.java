@@ -91,23 +91,31 @@ public class TaskService {
 
     public List<TaskResponse> getTasks(String author, String assignee) {
         Sort sort = Sort.by(Sort.Direction.DESC, "id");
-        List<Task> tasks = taskRepository.findAll(sort);
-
         String normalizedAuthor = normalizeOptionalEmail(author);
         String normalizedAssignee = normalizeOptionalEmail(assignee);
+
         boolean filterAssigneeNone = normalizedAssignee != null && normalizedAssignee.equals("none");
 
+        List<Task> tasks;
+        if (normalizedAuthor != null && normalizedAssignee != null) {
+            if (filterAssigneeNone) {
+                tasks = taskRepository.findAllByAuthorAndAssigneeIsNull(normalizedAuthor, sort);
+            } else {
+                tasks = taskRepository.findAllByAuthorAndAssignee(normalizedAuthor, normalizedAssignee, sort);
+            }
+        } else if (normalizedAuthor != null) {
+            tasks = taskRepository.findAllByAuthor(normalizedAuthor, sort);
+        } else if (normalizedAssignee != null) {
+            if (filterAssigneeNone) {
+                tasks = taskRepository.findAllByAssigneeIsNull(sort);
+            } else {
+                tasks = taskRepository.findAllByAssignee(normalizedAssignee, sort);
+            }
+        } else {
+            tasks = taskRepository.findAll(sort);
+        }
+
         return tasks.stream()
-                .filter(task -> normalizedAuthor == null || task.getAuthor().equals(normalizedAuthor))
-                .filter(task -> {
-                    if (normalizedAssignee == null) {
-                        return true;
-                    }
-                    if (filterAssigneeNone) {
-                        return task.getAssignee() == null;
-                    }
-                    return normalizedAssignee.equals(task.getAssignee());
-                })
                 .map(this::mapToResponse)
                 .toList();
     }

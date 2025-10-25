@@ -11,8 +11,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(path = "/api/auth", produces = MediaType.APPLICATION_JSON_VALUE)
 public class AuthController {
 
+    private final AccountUserService accountUserService;
+
+    public AuthController(AccountUserService accountUserService) {
+        this.accountUserService = accountUserService;
+    }
+
     @PostMapping(path = "/signup", consumes = MediaType.APPLICATION_JSON_VALUE)
     public SignupResponse signup(@Valid @RequestBody SignupRequest request) {
-        return new SignupResponse(request.name(), request.lastname(), request.email());
+        return accountUserService.registerUser(request);
     }
 }

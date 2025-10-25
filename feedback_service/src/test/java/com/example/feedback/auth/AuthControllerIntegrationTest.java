@@ -33,6 +33,7 @@ class AuthControllerIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         SignupResponse body = response.getBody();
         assertThat(body).isNotNull();
+        assertThat(body.id()).isNotNull();
         assertThat(body.name()).isEqualTo("John");
         assertThat(body.lastname()).isEqualTo("Doe");
         assertThat(body.email()).isEqualTo("john.doe@acme.com");
@@ -72,5 +73,77 @@ class AuthControllerIntegrationTest {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void signup_withDuplicateEmail_returnsBadRequest() {
+        SignupRequest request = new SignupRequest(
+                "Jane",
+                "Doe",
+                "jane.doe@acme.com",
+                "password123"
+        );
+
+        ResponseEntity<SignupResponse> firstResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(firstResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> secondResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                String.class
+        );
+
+        assertThat(secondResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(secondResponse.getBody()).isNotNull().contains("User exist!");
+    }
+
+    @Test
+    void payment_withoutAuthentication_returnsUnauthorized() {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "/api/empl/payment/",
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void payment_withAuthentication_returnsCurrentUserDetails() {
+        SignupRequest request = new SignupRequest(
+                "Alice",
+                "Smith",
+                "alice.smith@acme.com",
+                "strongpassword"
+        );
+
+        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        SignupResponse createdUser = signupResponse.getBody();
+        assertThat(createdUser).isNotNull();
+
+        ResponseEntity<SignupResponse> paymentResponse = restTemplate
+                .withBasicAuth("alice.smith@acme.com", "strongpassword")
+                .getForEntity(
+                        "/api/empl/payment/",
+                        SignupResponse.class
+                );
+
+        assertThat(paymentResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        SignupResponse paymentBody = paymentResponse.getBody();
+        assertThat(paymentBody).isNotNull();
+        assertThat(paymentBody.id()).isEqualTo(createdUser.id());
+        assertThat(paymentBody.name()).isEqualTo("Alice");
+        assertThat(paymentBody.lastname()).isEqualTo("Smith");
+        assertThat(paymentBody.email()).isEqualTo("alice.smith@acme.com");
     }
 }

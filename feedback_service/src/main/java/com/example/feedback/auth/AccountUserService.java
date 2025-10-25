@@ -41,7 +41,8 @@ public class AccountUserService {
 
     @Transactional(readOnly = true)
     public AccountUser findByEmail(String email) {
-        return repository.findByEmailIgnoreCase(email)
+        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+        return repository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
     }
 }

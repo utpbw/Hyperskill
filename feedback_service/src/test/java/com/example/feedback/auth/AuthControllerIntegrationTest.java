@@ -1,11 +1,14 @@
 package com.example.feedback.auth;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,6 +17,9 @@ class AuthControllerIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void signup_withValidRequest_returnsCreatedUserDetails() {
@@ -103,16 +109,6 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
-    void payment_withoutAuthentication_returnsUnauthorized() {
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                "/api/empl/payment/",
-                String.class
-        );
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-    }
-
-    @Test
     void payment_withAuthentication_returnsCurrentUserDetails() {
         SignupRequest request = new SignupRequest(
                 "Alice",
@@ -145,5 +141,82 @@ class AuthControllerIntegrationTest {
         assertThat(paymentBody.name()).isEqualTo("Alice");
         assertThat(paymentBody.lastname()).isEqualTo("Smith");
         assertThat(paymentBody.email()).isEqualTo("alice.smith@acme.com");
+    }
+
+    @Test
+    void payment_withDifferentEmailCase_authenticatesSuccessfully() {
+        SignupRequest request = new SignupRequest(
+                "Bob",
+                "Stone",
+                "bob.stone@acme.com",
+                "topsecret"
+        );
+
+        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<SignupResponse> paymentResponse = restTemplate
+                .withBasicAuth("Bob.Stone@acme.com", "topsecret")
+                .getForEntity(
+                        "/api/empl/payment/",
+                        SignupResponse.class
+                );
+
+        assertThat(paymentResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        SignupResponse body = paymentResponse.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.email()).isEqualTo("bob.stone@acme.com");
+    }
+
+    @Test
+    void payment_withWrongPassword_returnsUnauthorizedErrorBody() throws Exception {
+        SignupRequest request = new SignupRequest(
+                "Carol",
+                "Mills",
+                "carol.mills@acme.com",
+                "pass1234"
+        );
+
+        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> paymentResponse = restTemplate
+                .withBasicAuth("carol.mills@acme.com", "wrongpass")
+                .getForEntity(
+                        "/api/empl/payment/",
+                        String.class
+                );
+
+        assertThat(paymentResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        Map<?, ?> body = objectMapper.readValue(paymentResponse.getBody(), Map.class);
+        assertThat(body).containsEntry("status", 401);
+        assertThat(body).containsEntry("error", "Unauthorized");
+        assertThat(body).containsEntry("message", "");
+        assertThat(body.get("path")).isEqualTo("/api/empl/payment/");
+    }
+
+    @Test
+    void payment_withoutAuthentication_returnsUnauthorized() throws Exception {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "/api/empl/payment/",
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        Map<?, ?> body = objectMapper.readValue(response.getBody(), Map.class);
+        assertThat(body).containsEntry("status", 401);
+        assertThat(body).containsEntry("error", "Unauthorized");
+        assertThat(body).containsEntry("message", "");
+        assertThat(body.get("path")).isEqualTo("/api/empl/payment/");
     }
 }

@@ -1,29 +1,27 @@
 package com.example.accounts.api;
 
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Locale;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/accounts")
 public class AccountController {
 
-    private final Set<String> registeredEmails = ConcurrentHashMap.newKeySet();
+    private final AccountService accountService;
+
+    public AccountController(AccountService accountService) {
+        this.accountService = accountService;
+    }
 
     @PostMapping
-    public ResponseEntity<?> createAccount(@Validated @RequestBody AccountRequest request) {
-        String normalizedEmail = request.email().toLowerCase(Locale.ROOT);
+    public ResponseEntity<Void> createAccount(@Valid @RequestBody AccountRequest request) {
+        boolean created = accountService.registerAccount(request);
 
-        boolean isNewEmail = registeredEmails.add(normalizedEmail);
-        if (!isNewEmail) {
+        if (!created) {
             return ResponseEntity.status(409).build();
         }
 
-        // If validation passes, return OK
         return ResponseEntity.ok().build();
     }
 }

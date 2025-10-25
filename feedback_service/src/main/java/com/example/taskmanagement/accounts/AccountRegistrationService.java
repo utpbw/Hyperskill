@@ -10,9 +10,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.EnumSet;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 @Service
 public class AccountRegistrationService {
+
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
     private final AccountUserRepository repository;
     private final PasswordEncoder passwordEncoder;
@@ -33,8 +37,12 @@ public class AccountRegistrationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email must not be blank");
         }
 
+        if (!EMAIL_PATTERN.matcher(trimmedEmail).matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email must be valid");
+        }
+
         String normalizedEmail = trimmedEmail.toLowerCase(Locale.ROOT);
-        if (repository.existsByEmailIgnoreCase(trimmedEmail)) {
+        if (repository.existsByEmailIgnoreCase(normalizedEmail)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Account with this email already exists");
         }
 

@@ -1,7 +1,9 @@
 package com.example.taskmanagement.tasks;
 
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Locale;
@@ -16,7 +18,11 @@ public class TaskService {
     }
 
     public TaskResponse createTask(TaskRequest request, String authorEmail) {
-        String normalizedAuthor = authorEmail.toLowerCase(Locale.ROOT);
+        if (authorEmail == null || authorEmail.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user required");
+        }
+
+        String normalizedAuthor = authorEmail.trim().toLowerCase(Locale.ROOT);
         Task task = new Task(
                 request.title().trim(),
                 request.description().trim(),
@@ -30,7 +36,7 @@ public class TaskService {
     public List<TaskResponse> getTasks(String author) {
         Sort sort = Sort.by(Sort.Direction.DESC, "id");
         List<Task> tasks;
-        if (author == null) {
+        if (author == null || author.trim().isEmpty()) {
             tasks = taskRepository.findAll(sort);
         } else {
             String normalizedAuthor = author.trim().toLowerCase(Locale.ROOT);

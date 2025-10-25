@@ -10,6 +10,9 @@ import org.springframework.data.support.PageableExecutionUtils;
 import java.util.List;
 import java.util.regex.Pattern;
 
+/**
+ * MongoDB-backed implementation of the custom feedback repository queries.
+ */
 public class FeedbackRepositoryImpl implements FeedbackRepositoryCustom {
 
     private final MongoTemplate mongoTemplate;

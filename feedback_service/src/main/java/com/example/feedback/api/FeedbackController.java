@@ -19,6 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 import java.util.List;
 
+/**
+ * REST controller exposing CRUD-style operations for customer feedback documents.
+ */
 @RestController
 @RequestMapping("/feedback")
 public class FeedbackController {

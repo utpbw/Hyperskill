@@ -14,6 +14,9 @@ import org.springframework.core.env.Environment;
 
 import java.net.InetSocketAddress;
 
+/**
+ * Configures the MongoDB connection, optionally starting an embedded instance for testing.
+ */
 @Configuration
 public class MongoConfiguration {
 

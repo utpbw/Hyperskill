@@ -2,6 +2,9 @@ package com.example.feedback.api;
 
 import com.example.feedback.data.FeedbackDocument;
 
+/**
+ * DTO representing feedback documents returned to API consumers.
+ */
 public record FeedbackResponse(
         String id,
         Integer rating,

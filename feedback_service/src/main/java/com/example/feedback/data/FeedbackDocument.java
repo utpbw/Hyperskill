@@ -4,6 +4,9 @@ import com.example.feedback.api.FeedbackRequest;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+/**
+ * MongoDB document representing stored customer feedback information.
+ */
 @Document(collection = "feedback")
 public class FeedbackDocument {
 

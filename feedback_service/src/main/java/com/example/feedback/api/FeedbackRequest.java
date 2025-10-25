@@ -5,6 +5,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+/**
+ * Request payload describing the information required to create a feedback entry.
+ */
 public record FeedbackRequest(
         @NotNull(message = "rating is required")
         @Min(value = 0, message = "rating must be non-negative")

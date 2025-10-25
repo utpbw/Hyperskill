@@ -5,15 +5,17 @@ import com.example.taskmanagement.auth.AccountUserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import com.example.taskmanagement.security.BearerTokenAuthenticationFilter;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -25,10 +27,14 @@ public class SecurityConfiguration {
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
     private final RestAccessDeniedHandler restAccessDeniedHandler;
 
+    private final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter;
+
     public SecurityConfiguration(RestAuthenticationEntryPoint restAuthenticationEntryPoint,
-                                 RestAccessDeniedHandler restAccessDeniedHandler) {
+                                 RestAccessDeniedHandler restAccessDeniedHandler,
+                                 BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter) {
         this.restAuthenticationEntryPoint = restAuthenticationEntryPoint;
         this.restAccessDeniedHandler = restAccessDeniedHandler;
+        this.bearerTokenAuthenticationFilter = bearerTokenAuthenticationFilter;
     }
 
     @Bean
@@ -55,7 +61,8 @@ public class SecurityConfiguration {
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .addFilterBefore(bearerTokenAuthenticationFilter, BasicAuthenticationFilter.class);
 
         return http.build();
     }

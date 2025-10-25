@@ -18,10 +18,14 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final AccountUserRepository accountUserRepository;
+    private final TaskCommentRepository taskCommentRepository;
 
-    public TaskService(TaskRepository taskRepository, AccountUserRepository accountUserRepository) {
+    public TaskService(TaskRepository taskRepository,
+                       AccountUserRepository accountUserRepository,
+                       TaskCommentRepository taskCommentRepository) {
         this.taskRepository = taskRepository;
         this.accountUserRepository = accountUserRepository;
+        this.taskCommentRepository = taskCommentRepository;
     }
 
     public TaskResponse createTask(TaskRequest request, String authorEmail) {
@@ -87,6 +91,24 @@ public class TaskService {
         task.setStatus(request.status());
         Task saved = taskRepository.save(task);
         return mapToResponse(saved);
+    }
+
+    public TaskCommentResponse addComment(long taskId, TaskCommentRequest request, String commenterEmail) {
+        Task task = findTask(taskId);
+        String normalizedCommenter = normalizeEmail(requireAuthenticatedEmail(commenterEmail));
+
+        String text = request.text();
+        if (text == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Comment text must be provided");
+        }
+        String trimmedText = text.trim();
+        if (trimmedText.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Comment text must not be blank");
+        }
+
+        TaskComment comment = new TaskComment(task, normalizedCommenter, trimmedText);
+        TaskComment saved = taskCommentRepository.save(comment);
+        return mapToCommentResponse(saved);
     }
 
     public List<TaskResponse> getTasks(String author, String assignee) {
@@ -155,6 +177,18 @@ public class TaskService {
                 task.getStatus().name(),
                 task.getAuthor(),
                 task.getAssignee() == null ? "none" : task.getAssignee()
+        );
+    }
+
+    private TaskCommentResponse mapToCommentResponse(TaskComment comment) {
+        return new TaskCommentResponse(
+                comment.getId() != null ? String.valueOf(comment.getId()) : null,
+                comment.getTask() != null && comment.getTask().getId() != null
+                        ? String.valueOf(comment.getTask().getId())
+                        : null,
+                comment.getText(),
+                comment.getAuthor(),
+                comment.getCreatedAt() != null ? comment.getCreatedAt().toString() : null
         );
     }
 }

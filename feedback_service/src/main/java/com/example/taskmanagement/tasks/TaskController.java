@@ -64,4 +64,14 @@ public class TaskController {
         }
         return taskService.updateStatus(taskId, request, authentication.getName());
     }
+
+    @PostMapping(path = "/{taskId}/comments", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public TaskCommentResponse addComment(@PathVariable("taskId") long taskId,
+                                          @Valid @RequestBody TaskCommentRequest request,
+                                          Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        return taskService.addComment(taskId, request, authentication.getName());
+    }
 }

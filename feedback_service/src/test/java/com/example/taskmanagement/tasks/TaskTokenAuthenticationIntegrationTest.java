@@ -30,8 +30,12 @@ class TaskTokenAuthenticationIntegrationTest {
     @Autowired
     private TaskRepository taskRepository;
 
+    @Autowired
+    private TaskCommentRepository taskCommentRepository;
+
     @BeforeEach
     void cleanDatabase() {
+        taskCommentRepository.deleteAll();
         taskRepository.deleteAll();
         accountUserRepository.deleteAll();
     }
@@ -87,6 +91,35 @@ class TaskTokenAuthenticationIntegrationTest {
         TaskResponse assignedTask = assignResponse.getBody();
         assertThat(assignedTask).isNotNull();
         assertThat(assignedTask.assignee()).isEqualTo(assigneeEmail);
+
+        TaskCommentRequest commentRequest = new TaskCommentRequest("Great job");
+        HttpHeaders commentHeaders = new HttpHeaders();
+        commentHeaders.setContentType(MediaType.APPLICATION_JSON);
+        commentHeaders.setBearerAuth(assigneeToken);
+
+        ResponseEntity<TaskCommentResponse> commentResponse = restTemplate.exchange(
+                "/api/tasks/" + taskId + "/comments",
+                HttpMethod.POST,
+                new HttpEntity<>(commentRequest, commentHeaders),
+                TaskCommentResponse.class
+        );
+
+        assertThat(commentResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TaskCommentResponse postedComment = commentResponse.getBody();
+        assertThat(postedComment).isNotNull();
+        assertThat(postedComment.taskId()).isEqualTo(String.valueOf(taskId));
+        assertThat(postedComment.author()).isEqualTo(assigneeEmail);
+        assertThat(postedComment.text()).isEqualTo("Great job");
+
+        TaskCommentRequest invalidCommentRequest = new TaskCommentRequest("   ");
+        ResponseEntity<String> invalidCommentResponse = restTemplate.exchange(
+                "/api/tasks/" + taskId + "/comments",
+                HttpMethod.POST,
+                new HttpEntity<>(invalidCommentRequest, commentHeaders),
+                String.class
+        );
+
+        assertThat(invalidCommentResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
         HttpHeaders unauthorizedAssignHeaders = new HttpHeaders();
         unauthorizedAssignHeaders.setContentType(MediaType.APPLICATION_JSON);

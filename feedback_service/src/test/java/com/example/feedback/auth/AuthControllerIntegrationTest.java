@@ -267,6 +267,27 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
+    void uploadPayments_withMultipleValidationErrors_returnsAggregatedMessage() {
+        registerUser("aggregate@acme.com", "averysecurepwd");
+
+        List<PayrollRequest> payload = List.of(
+                new PayrollRequest("aggregate@acme.com", "01-2024", -1L),
+                new PayrollRequest("aggregate@acme.com", "13-2024", 1_000_00L)
+        );
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/api/acct/payments",
+                payload,
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("message")).isEqualTo("payments[0].salary: Salary must be non negative!, payments[1].period: Wrong date!");
+        assertThat(body.get("path")).isEqualTo("/api/acct/payments");
+    }
+
+    @Test
     void updatePayments_withValidRequest_updatesSalary() {
         registerUser("update@acme.com", "superstrongpass");
         PayrollRequest initial = new PayrollRequest("update@acme.com", "04-2024", 100_00L);

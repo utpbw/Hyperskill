@@ -98,7 +98,7 @@ public class PayrollService {
     private PayrollRecord mapRequestToRecord(PayrollRequest request) {
         String employeeEmail = Optional.ofNullable(request.employee())
                 .map(String::trim)
-                .map(String::toLowerCase)
+                .map(value -> value.toLowerCase(Locale.ROOT))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Employee email must not be blank"));
 
         if (employeeEmail.isEmpty()) {
@@ -107,10 +107,6 @@ public class PayrollService {
 
         long salary = Optional.ofNullable(request.salary())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Salary must be provided"));
-
-        if (salary < 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Salary must be non-negative");
-        }
 
         YearMonth period = parsePeriod(request.period());
 
@@ -131,16 +127,16 @@ public class PayrollService {
     private YearMonth parsePeriod(String value) {
         String trimmed = Optional.ofNullable(value)
                 .map(String::trim)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Period must be provided"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Wrong date!"));
 
         if (trimmed.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Period must be provided");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Wrong date!");
         }
 
         try {
             return YearMonth.parse(trimmed, PERIOD_PARSER);
         } catch (DateTimeException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Wrong period format");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Wrong date!");
         }
     }
 

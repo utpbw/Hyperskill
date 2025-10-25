@@ -2,7 +2,6 @@ package com.example.feedback.auth;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 
 public record SignupRequest(
         @NotBlank(message = "Name must not be blank")
@@ -12,9 +11,8 @@ public record SignupRequest(
         String lastname,
 
         @NotBlank(message = "Email must not be blank")
-        @Email(message = "Email must be a valid address")
-        @Pattern(
-                regexp = "(?i).+@acme\\.com$",
+        @Email(
+                regexp = "(?i)^.+@acme\\.com$",
                 message = "Email must belong to the corporate domain"
         )
         String email,

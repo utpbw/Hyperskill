@@ -18,10 +18,10 @@ public class TaskDataInitializer implements CommandLineRunner {
     public void run(String... args) {
         if (taskRepository.count() == 0) {
             taskRepository.saveAll(List.of(
-                    new Task("Plan sprint", "Outline tasks and priorities for the next sprint."),
-                    new Task("Review pull requests", "Go through pending PRs and provide feedback."),
-                    new Task("Prepare release notes", "Compile updates for the upcoming release."))
-            );
+                    new Task("Plan sprint", "Outline tasks and priorities for the next sprint.", "system@taskmanagement.local", TaskStatus.CREATED),
+                    new Task("Review pull requests", "Go through pending PRs and provide feedback.", "system@taskmanagement.local", TaskStatus.CREATED),
+                    new Task("Prepare release notes", "Compile updates for the upcoming release.", "system@taskmanagement.local", TaskStatus.CREATED)
+            ));
         }
     }
 }

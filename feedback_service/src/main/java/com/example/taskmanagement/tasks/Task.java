@@ -2,6 +2,8 @@ package com.example.taskmanagement.tasks;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -21,12 +23,21 @@ public class Task {
     @Column(nullable = false)
     private String description;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private TaskStatus status = TaskStatus.CREATED;
+
+    @Column(nullable = false)
+    private String author;
+
     public Task() {
     }
 
-    public Task(String title, String description) {
+    public Task(String title, String description, String author, TaskStatus status) {
         this.title = title;
         this.description = description;
+        this.author = author;
+        this.status = status;
     }
 
     public Long getId() {
@@ -51,5 +62,21 @@ public class Task {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public TaskStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(TaskStatus status) {
+        this.status = status;
+    }
+
+    public String getAuthor() {
+        return author;
+    }
+
+    public void setAuthor(String author) {
+        this.author = author;
     }
 }

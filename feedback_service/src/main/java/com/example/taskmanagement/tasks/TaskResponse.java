@@ -1,4 +1,10 @@
 package com.example.taskmanagement.tasks;
 
-public record TaskResponse(Long id, String title, String description) {
+public record TaskResponse(
+        String id,
+        String title,
+        String description,
+        String status,
+        String author
+) {
 }

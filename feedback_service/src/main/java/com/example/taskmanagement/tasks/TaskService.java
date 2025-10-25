@@ -8,6 +8,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 @Service
@@ -42,7 +43,7 @@ public class TaskService {
                 null
         );
         Task saved = taskRepository.save(task);
-        return mapToResponse(saved);
+        return mapToResponse(saved, 0L);
     }
 
     public TaskResponse assignTask(long taskId, TaskAssignmentRequest request, String requesterEmail) {
@@ -75,7 +76,8 @@ public class TaskService {
         }
 
         Task saved = taskRepository.save(task);
-        return mapToResponse(saved);
+        long totalComments = taskCommentRepository.countByTask(saved);
+        return mapToResponse(saved, totalComments);
     }
 
     public TaskResponse updateStatus(long taskId, TaskStatusUpdateRequest request, String requesterEmail) {
@@ -90,7 +92,8 @@ public class TaskService {
 
         task.setStatus(request.status());
         Task saved = taskRepository.save(task);
-        return mapToResponse(saved);
+        long totalComments = taskCommentRepository.countByTask(saved);
+        return mapToResponse(saved, totalComments);
     }
 
     public TaskCommentResponse addComment(long taskId, TaskCommentRequest request, String commenterEmail) {
@@ -146,8 +149,25 @@ public class TaskService {
             tasks = taskRepository.findAll(sort);
         }
 
+        if (tasks.isEmpty()) {
+            return List.of();
+        }
+
+        List<TaskCommentCount> counts = taskCommentRepository.countAllByTaskIn(tasks);
+        Map<Long, Long> commentCountByTaskId = counts.stream()
+                .filter(count -> count.getTaskId() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        TaskCommentCount::getTaskId,
+                        TaskCommentCount::getTotal,
+                        Long::sum
+                ));
+
         return tasks.stream()
-                .map(this::mapToResponse)
+                .map(task -> {
+                    Long taskId = task.getId();
+                    long total = taskId != null ? commentCountByTaskId.getOrDefault(taskId, 0L) : 0L;
+                    return mapToResponse(task, total);
+                })
                 .toList();
     }
 
@@ -178,14 +198,15 @@ public class TaskService {
         return trimmed.toLowerCase(Locale.ROOT);
     }
 
-    private TaskResponse mapToResponse(Task task) {
+    private TaskResponse mapToResponse(Task task, long totalComments) {
         return new TaskResponse(
                 task.getId() != null ? String.valueOf(task.getId()) : null,
                 task.getTitle(),
                 task.getDescription(),
                 task.getStatus().name(),
                 task.getAuthor(),
-                task.getAssignee() == null ? "none" : task.getAssignee()
+                task.getAssignee() == null ? "none" : task.getAssignee(),
+                totalComments
         );
     }
 

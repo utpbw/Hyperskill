@@ -72,6 +72,7 @@ class TaskTokenAuthenticationIntegrationTest {
         assertThat(createdTask.id()).isNotBlank();
         assertThat(createdTask.author()).isEqualTo(authorEmail);
         assertThat(createdTask.assignee()).isEqualTo("none");
+        assertThat(createdTask.totalComments()).isZero();
 
         long taskId = Long.parseLong(createdTask.id());
 
@@ -91,6 +92,7 @@ class TaskTokenAuthenticationIntegrationTest {
         TaskResponse assignedTask = assignResponse.getBody();
         assertThat(assignedTask).isNotNull();
         assertThat(assignedTask.assignee()).isEqualTo(assigneeEmail);
+        assertThat(assignedTask.totalComments()).isZero();
 
         TaskCommentRequest commentRequest = new TaskCommentRequest("Great job");
         HttpHeaders commentHeaders = new HttpHeaders();
@@ -192,6 +194,7 @@ class TaskTokenAuthenticationIntegrationTest {
         TaskResponse inProgressTask = inProgressResponse.getBody();
         assertThat(inProgressTask).isNotNull();
         assertThat(inProgressTask.status()).isEqualTo(TaskStatus.IN_PROGRESS.name());
+        assertThat(inProgressTask.totalComments()).isEqualTo(2);
 
         TaskStatusUpdateRequest completedRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
         statusHeaders.setBearerAuth(authorToken);
@@ -207,6 +210,7 @@ class TaskTokenAuthenticationIntegrationTest {
         TaskResponse completedTask = completedResponse.getBody();
         assertThat(completedTask).isNotNull();
         assertThat(completedTask.status()).isEqualTo(TaskStatus.COMPLETED.name());
+        assertThat(completedTask.totalComments()).isEqualTo(2);
 
         ResponseEntity<TaskResponse[]> assignedFilterResponse = restTemplate.exchange(
                 "/api/tasks?assignee=" + assigneeEmail.toUpperCase(),
@@ -219,6 +223,7 @@ class TaskTokenAuthenticationIntegrationTest {
         TaskResponse[] assignedFiltered = assignedFilterResponse.getBody();
         assertThat(assignedFiltered).isNotNull();
         assertThat(assignedFiltered).hasSize(1);
+        assertThat(assignedFiltered[0].totalComments()).isEqualTo(2);
 
         TaskAssignmentRequest unassignRequest = new TaskAssignmentRequest("none");
         ResponseEntity<TaskResponse> unassignResponse = restTemplate.exchange(
@@ -232,6 +237,7 @@ class TaskTokenAuthenticationIntegrationTest {
         TaskResponse unassignedTask = unassignResponse.getBody();
         assertThat(unassignedTask).isNotNull();
         assertThat(unassignedTask.assignee()).isEqualTo("none");
+        assertThat(unassignedTask.totalComments()).isEqualTo(2);
 
         HttpHeaders unassignedFilterHeaders = new HttpHeaders();
         unassignedFilterHeaders.setBearerAuth(authorToken);
@@ -248,6 +254,7 @@ class TaskTokenAuthenticationIntegrationTest {
         assertThat(unassignedFiltered).isNotNull();
         assertThat(unassignedFiltered).hasSize(1);
         assertThat(unassignedFiltered[0].assignee()).isEqualTo("none");
+        assertThat(unassignedFiltered[0].totalComments()).isEqualTo(2);
 
         HttpHeaders listHeaders = new HttpHeaders();
         listHeaders.setBearerAuth(authorToken);
@@ -264,6 +271,7 @@ class TaskTokenAuthenticationIntegrationTest {
         assertThat(allTasks).isNotNull();
         assertThat(allTasks).hasSize(1);
         assertThat(allTasks[0].assignee()).isEqualTo("none");
+        assertThat(allTasks[0].totalComments()).isEqualTo(2);
 
         ResponseEntity<TaskResponse[]> authorFilterResponse = restTemplate.exchange(
                 "/api/tasks?author=" + authorEmail.toUpperCase(),
@@ -276,6 +284,7 @@ class TaskTokenAuthenticationIntegrationTest {
         TaskResponse[] authorFiltered = authorFilterResponse.getBody();
         assertThat(authorFiltered).isNotNull();
         assertThat(authorFiltered).hasSize(1);
+        assertThat(authorFiltered[0].totalComments()).isEqualTo(2);
 
         ResponseEntity<TaskResponse[]> assigneeFilterResponse = restTemplate.exchange(
                 "/api/tasks?assignee=" + assigneeEmail.toUpperCase(),

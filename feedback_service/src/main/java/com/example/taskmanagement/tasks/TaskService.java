@@ -9,6 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 @Service
@@ -153,8 +154,14 @@ public class TaskService {
             return List.of();
         }
 
-        List<TaskCommentCount> counts = taskCommentRepository.countAllByTaskIn(tasks);
-        Map<Long, Long> commentCountByTaskId = counts.stream()
+        List<Long> taskIds = tasks.stream()
+                .map(Task::getId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        Map<Long, Long> commentCountByTaskId = taskIds.isEmpty()
+                ? java.util.Collections.emptyMap()
+                : taskCommentRepository.countAllByTaskIds(taskIds).stream()
                 .filter(count -> count.getTaskId() != null)
                 .collect(java.util.stream.Collectors.toMap(
                         TaskCommentCount::getTaskId,

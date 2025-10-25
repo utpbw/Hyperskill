@@ -31,6 +31,7 @@ public class SecurityEventService {
     public List<SecurityEventResponse> findAll() {
         return repository.findAll(Sort.by(Sort.Direction.ASC, "id")).stream()
                 .map(event -> new SecurityEventResponse(
+                        event.getId(),
                         event.getDate(),
                         event.getAction(),
                         event.getSubject(),

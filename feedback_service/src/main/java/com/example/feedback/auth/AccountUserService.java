@@ -71,7 +71,7 @@ public class AccountUserService {
                 path);
         roles.forEach(role -> securityEventService.logEvent(SecurityEventAction.GRANT_ROLE,
                 SecurityEventService.ANONYMOUS_SUBJECT,
-                "Grant role " + role.name() + " to " + saved.getEmail(),
+                "Grant role " + role.getRoleName() + " to " + saved.getEmail(),
                 path));
         return toResponse(saved);
     }
@@ -121,8 +121,8 @@ public class AccountUserService {
         repository.delete(user);
         securityEventService.logEvent(SecurityEventAction.DELETE_USER,
                 normalizeEmail(subjectEmail),
-                "Delete user " + user.getEmail(),
-                path);
+                user.getEmail(),
+                sanitizePathForDeletion(path));
         return new UserDeletionResponse(user.getEmail(), "Deleted successfully!");
     }
 
@@ -142,7 +142,7 @@ public class AccountUserService {
             if (added) {
                 securityEventService.logEvent(SecurityEventAction.GRANT_ROLE,
                         subject,
-                        "Grant role " + role.name() + " to " + saved.getEmail(),
+                        "Grant role " + role.getRoleName() + " to " + saved.getEmail(),
                         path);
             }
             return toResponse(saved);
@@ -151,7 +151,7 @@ public class AccountUserService {
             AccountUser saved = repository.save(user);
             securityEventService.logEvent(SecurityEventAction.REMOVE_ROLE,
                     subject,
-                    "Remove role " + role.name() + " from " + saved.getEmail(),
+                    "Remove role " + role.getRoleName() + " from " + saved.getEmail(),
                     path);
             return toResponse(saved);
         }
@@ -256,5 +256,19 @@ public class AccountUserService {
 
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String sanitizePathForDeletion(String path) {
+        if (path == null) {
+            return "";
+        }
+        int lastSlash = path.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < path.length() - 1) {
+            String lastSegment = path.substring(lastSlash + 1);
+            if (lastSegment.contains("@")) {
+                return path.substring(0, lastSlash);
+            }
+        }
+        return path;
     }
 }

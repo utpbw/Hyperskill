@@ -53,6 +53,20 @@ class AuthControllerIntegrationTest {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> parseList(ResponseEntity<String> response) {
+        try {
+            return objectMapper.readValue(response.getBody(), List.class);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to parse response body", ex);
+        }
+    }
+
+    private String valueOf(Map<?, ?> map, String key) {
+        Object value = map.get(key);
+        return value == null ? null : value.toString();
+    }
+
     private void registerDefaultAdmin() {
         registerUser(ADMIN_EMAIL, ADMIN_PASSWORD);
     }
@@ -804,6 +818,133 @@ class AuthControllerIntegrationTest {
         assertThat(body.get("error")).isEqualTo("Forbidden");
         assertThat(body.get("message")).isEqualTo("Access Denied!");
         assertThat(body.get("path")).isEqualTo("/api/admin/user");
+    }
+
+    @Test
+    void securityEvents_captureKeyActions() {
+        registerUser(ADMIN_EMAIL, ADMIN_PASSWORD);
+        registerUser("petrpetrov@acme.com", "UserPassword123");
+        registerUser("maxmustermann@acme.com", "MaxSecurePass123");
+        registerUser("auditor@acme.com", "AuditorPass123");
+
+        grantRole(ADMIN_EMAIL, ADMIN_PASSWORD, "auditor@acme.com", "AUDITOR");
+        grantRole(ADMIN_EMAIL, ADMIN_PASSWORD, "petrpetrov@acme.com", "ACCOUNTANT");
+
+        RoleUpdateRequest removeAccountant = new RoleUpdateRequest("petrpetrov@acme.com", "ACCOUNTANT", RoleOperation.REMOVE);
+        ResponseEntity<UserResponse> removeResponse = exchangeRole(ADMIN_EMAIL, ADMIN_PASSWORD, removeAccountant, UserResponse.class);
+        assertThat(removeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<UserDeletionResponse> deleteResponse = deleteUser(ADMIN_EMAIL, ADMIN_PASSWORD, "petrpetrov@acme.com");
+        assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        HttpHeaders jsonHeaders = new HttpHeaders();
+        jsonHeaders.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> accessDeniedResponse = restTemplate
+                .withBasicAuth(ADMIN_EMAIL, ADMIN_PASSWORD)
+                .postForEntity(
+                        "/api/acct/payments",
+                        new HttpEntity<>("[]", jsonHeaders),
+                        String.class
+                );
+        assertThat(accessDeniedResponse.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        for (int i = 0; i < 5; i++) {
+            ResponseEntity<String> failureResponse = restTemplate
+                    .withBasicAuth("maxmustermann@acme.com", "WrongPassword123")
+                    .getForEntity("/api/empl/payment", String.class);
+            assertThat(failureResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        }
+
+        HttpHeaders accessHeaders = new HttpHeaders();
+        accessHeaders.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<UserAccessStatusResponse> unlockResponse = restTemplate
+                .withBasicAuth(ADMIN_EMAIL, ADMIN_PASSWORD)
+                .exchange(
+                        "/api/admin/user/access",
+                        HttpMethod.PUT,
+                        new HttpEntity<>(new UserAccessRequest("maxmustermann@acme.com", UserAccessOperation.UNLOCK), accessHeaders),
+                        UserAccessStatusResponse.class
+                );
+        assertThat(unlockResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(unlockResponse.getBody()).isNotNull();
+        assertThat(unlockResponse.getBody().status()).isEqualTo("User maxmustermann@acme.com unlocked!");
+
+        ResponseEntity<PasswordChangeResponse> passwordChangeResponse = restTemplate
+                .withBasicAuth(ADMIN_EMAIL, ADMIN_PASSWORD)
+                .postForEntity(
+                        "/api/auth/changepass",
+                        new PasswordChangeRequest("NewAdm1nPassword456"),
+                        PasswordChangeResponse.class
+                );
+        assertThat(passwordChangeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> eventsResponse = restTemplate
+                .withBasicAuth("auditor@acme.com", "AuditorPass123")
+                .getForEntity("/api/security/events", String.class);
+        assertThat(eventsResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        List<Map<String, Object>> events = parseList(eventsResponse);
+        assertThat(events).isNotEmpty();
+        List<Long> ids = events.stream()
+                .map(event -> ((Number) event.get("id")).longValue())
+                .toList();
+        assertThat(ids).isSorted();
+
+        assertThat(events).anyMatch(event ->
+                "CREATE_USER".equals(valueOf(event, "action")) &&
+                        "Anonymous".equals(valueOf(event, "subject")) &&
+                        ADMIN_EMAIL.equals(valueOf(event, "object")) &&
+                        "/api/auth/signup".equals(valueOf(event, "path")));
+
+        assertThat(events).anyMatch(event ->
+                "GRANT_ROLE".equals(valueOf(event, "action")) &&
+                        ADMIN_EMAIL.equals(valueOf(event, "subject")) &&
+                        "Grant role ACCOUNTANT to petrpetrov@acme.com".equals(valueOf(event, "object")));
+
+        assertThat(events).anyMatch(event ->
+                "REMOVE_ROLE".equals(valueOf(event, "action")) &&
+                        ADMIN_EMAIL.equals(valueOf(event, "subject")) &&
+                        "Remove role ACCOUNTANT from petrpetrov@acme.com".equals(valueOf(event, "object")));
+
+        assertThat(events).anyMatch(event ->
+                "DELETE_USER".equals(valueOf(event, "action")) &&
+                        ADMIN_EMAIL.equals(valueOf(event, "subject")) &&
+                        "petrpetrov@acme.com".equals(valueOf(event, "object")) &&
+                        "/api/admin/user".equals(valueOf(event, "path")));
+
+        assertThat(events).anyMatch(event ->
+                "ACCESS_DENIED".equals(valueOf(event, "action")) &&
+                        ADMIN_EMAIL.equals(valueOf(event, "subject")) &&
+                        "/api/acct/payments".equals(valueOf(event, "object")) &&
+                        "/api/acct/payments".equals(valueOf(event, "path")));
+
+        assertThat(events).anyMatch(event ->
+                "LOGIN_FAILED".equals(valueOf(event, "action")) &&
+                        "maxmustermann@acme.com".equals(valueOf(event, "subject")) &&
+                        "/api/empl/payment".equals(valueOf(event, "object")));
+
+        assertThat(events).anyMatch(event ->
+                "BRUTE_FORCE".equals(valueOf(event, "action")) &&
+                        "maxmustermann@acme.com".equals(valueOf(event, "subject")) &&
+                        "/api/empl/payment".equals(valueOf(event, "object")));
+
+        assertThat(events).anyMatch(event ->
+                "LOCK_USER".equals(valueOf(event, "action")) &&
+                        "maxmustermann@acme.com".equals(valueOf(event, "subject")) &&
+                        "Lock user maxmustermann@acme.com".equals(valueOf(event, "object")) &&
+                        "/api/empl/payment".equals(valueOf(event, "path")));
+
+        assertThat(events).anyMatch(event ->
+                "UNLOCK_USER".equals(valueOf(event, "action")) &&
+                        ADMIN_EMAIL.equals(valueOf(event, "subject")) &&
+                        "Unlock user maxmustermann@acme.com".equals(valueOf(event, "object")) &&
+                        "/api/admin/user/access".equals(valueOf(event, "path")));
+
+        assertThat(events).anyMatch(event ->
+                "CHANGE_PASSWORD".equals(valueOf(event, "action")) &&
+                        ADMIN_EMAIL.equals(valueOf(event, "subject")) &&
+                        ADMIN_EMAIL.equals(valueOf(event, "object")) &&
+                        "/api/auth/changepass".equals(valueOf(event, "path")));
     }
 
     @Test

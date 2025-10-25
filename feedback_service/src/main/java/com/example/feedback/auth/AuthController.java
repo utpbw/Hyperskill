@@ -2,6 +2,7 @@ package com.example.feedback.auth;
 
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,5 +21,13 @@ public class AuthController {
     @PostMapping(path = "/signup", consumes = MediaType.APPLICATION_JSON_VALUE)
     public SignupResponse signup(@Valid @RequestBody SignupRequest request) {
         return accountUserService.registerUser(request);
+    }
+
+    @PostMapping(path = "/changepass", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public PasswordChangeResponse changePassword(
+            Authentication authentication,
+            @Valid @RequestBody PasswordChangeRequest request
+    ) {
+        return accountUserService.changePassword(authentication.getName(), request.newPassword());
     }
 }

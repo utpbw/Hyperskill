@@ -27,7 +27,7 @@ class AuthControllerIntegrationTest {
                 "John",
                 "Doe",
                 "john.doe@acme.com",
-                "password123"
+                "password1234"
         );
 
         ResponseEntity<SignupResponse> response = restTemplate.postForEntity(
@@ -51,7 +51,7 @@ class AuthControllerIntegrationTest {
                 "John",
                 "Doe",
                 "john.doe@gmail.com",
-                "password123"
+                "password1234"
         );
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -87,7 +87,7 @@ class AuthControllerIntegrationTest {
                 "Jane",
                 "Doe",
                 "jane.doe@acme.com",
-                "password123"
+                "password1234"
         );
 
         ResponseEntity<SignupResponse> firstResponse = restTemplate.postForEntity(
@@ -106,6 +106,44 @@ class AuthControllerIntegrationTest {
 
         assertThat(secondResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(secondResponse.getBody()).isNotNull().contains("User exist!");
+    }
+
+    @Test
+    void signup_withShortPassword_returnsBadRequestWithMessage() {
+        SignupRequest request = new SignupRequest(
+                "June",
+                "Short",
+                "june.short@acme.com",
+                "shortpass"
+        );
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull().contains("Password length must be 12 chars minimum!");
+    }
+
+    @Test
+    void signup_withBreachedPassword_returnsBadRequestWithMessage() {
+        SignupRequest request = new SignupRequest(
+                "Breach",
+                "Test",
+                "breach.test@acme.com",
+                "PasswordForJanuary"
+        );
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull().contains("The password is in the hacker's database!");
     }
 
     @Test
@@ -149,7 +187,7 @@ class AuthControllerIntegrationTest {
                 "Bob",
                 "Stone",
                 "bob.stone@acme.com",
-                "topsecret"
+                "topsecretpass"
         );
 
         ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
@@ -161,7 +199,7 @@ class AuthControllerIntegrationTest {
         assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         ResponseEntity<SignupResponse> paymentResponse = restTemplate
-                .withBasicAuth("Bob.Stone@acme.com", "topsecret")
+                .withBasicAuth("Bob.Stone@acme.com", "topsecretpass")
                 .getForEntity(
                         "/api/empl/payment/",
                         SignupResponse.class
@@ -179,7 +217,7 @@ class AuthControllerIntegrationTest {
                 "Carol",
                 "Mills",
                 "carol.mills@acme.com",
-                "pass1234"
+                "pass1234secure"
         );
 
         ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
@@ -199,10 +237,145 @@ class AuthControllerIntegrationTest {
 
         assertThat(paymentResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         Map<?, ?> body = objectMapper.readValue(paymentResponse.getBody(), Map.class);
-        assertThat(body).containsEntry("status", 401);
-        assertThat(body).containsEntry("error", "Unauthorized");
-        assertThat(body).containsEntry("message", "");
+        assertThat(body.get("status")).isEqualTo(401);
+        assertThat(body.get("error")).isEqualTo("Unauthorized");
+        assertThat(body.get("message")).isEqualTo("");
         assertThat(body.get("path")).isEqualTo("/api/empl/payment/");
+    }
+
+    @Test
+    void changePassword_withValidRequest_updatesPassword() {
+        SignupRequest request = new SignupRequest(
+                "Diane",
+                "Evans",
+                "diane.evans@acme.com",
+                "initialPass123"
+        );
+
+        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<PasswordChangeResponse> changeResponse = restTemplate
+                .withBasicAuth("diane.evans@acme.com", "initialPass123")
+                .postForEntity(
+                        "/api/auth/changepass",
+                        new PasswordChangeRequest("newSecurePass123"),
+                        PasswordChangeResponse.class
+                );
+
+        assertThat(changeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        PasswordChangeResponse body = changeResponse.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.email()).isEqualTo("diane.evans@acme.com");
+        assertThat(body.status()).isEqualTo("The password has been updated successfully");
+
+        ResponseEntity<String> oldPasswordResponse = restTemplate
+                .withBasicAuth("diane.evans@acme.com", "initialPass123")
+                .getForEntity(
+                        "/api/empl/payment/",
+                        String.class
+                );
+        assertThat(oldPasswordResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
+        ResponseEntity<SignupResponse> newPasswordResponse = restTemplate
+                .withBasicAuth("diane.evans@acme.com", "newSecurePass123")
+                .getForEntity(
+                        "/api/empl/payment/",
+                        SignupResponse.class
+                );
+        assertThat(newPasswordResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void changePassword_withShortPassword_returnsBadRequest() {
+        SignupRequest request = new SignupRequest(
+                "Ethan",
+                "Frost",
+                "ethan.frost@acme.com",
+                "validPassword123"
+        );
+
+        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> changeResponse = restTemplate
+                .withBasicAuth("ethan.frost@acme.com", "validPassword123")
+                .postForEntity(
+                        "/api/auth/changepass",
+                        new PasswordChangeRequest("short"),
+                        String.class
+                );
+
+        assertThat(changeResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(changeResponse.getBody()).isNotNull().contains("Password length must be 12 chars minimum!");
+    }
+
+    @Test
+    void changePassword_withBreachedPassword_returnsBadRequest() {
+        SignupRequest request = new SignupRequest(
+                "Grace",
+                "Hall",
+                "grace.hall@acme.com",
+                "validPassword456"
+        );
+
+        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> changeResponse = restTemplate
+                .withBasicAuth("grace.hall@acme.com", "validPassword456")
+                .postForEntity(
+                        "/api/auth/changepass",
+                        new PasswordChangeRequest("PasswordForFebruary"),
+                        String.class
+                );
+
+        assertThat(changeResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(changeResponse.getBody()).isNotNull().contains("The password is in the hacker's database!");
+    }
+
+    @Test
+    void changePassword_withSamePassword_returnsBadRequest() {
+        SignupRequest request = new SignupRequest(
+                "Holly",
+                "Irwin",
+                "holly.irwin@acme.com",
+                "duplicatePass123"
+        );
+
+        ResponseEntity<SignupResponse> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                SignupResponse.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> changeResponse = restTemplate
+                .withBasicAuth("holly.irwin@acme.com", "duplicatePass123")
+                .postForEntity(
+                        "/api/auth/changepass",
+                        new PasswordChangeRequest("duplicatePass123"),
+                        String.class
+                );
+
+        assertThat(changeResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(changeResponse.getBody()).isNotNull().contains("The passwords must be different!");
     }
 
     @Test
@@ -214,9 +387,9 @@ class AuthControllerIntegrationTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         Map<?, ?> body = objectMapper.readValue(response.getBody(), Map.class);
-        assertThat(body).containsEntry("status", 401);
-        assertThat(body).containsEntry("error", "Unauthorized");
-        assertThat(body).containsEntry("message", "");
+        assertThat(body.get("status")).isEqualTo(401);
+        assertThat(body.get("error")).isEqualTo("Unauthorized");
+        assertThat(body.get("message")).isEqualTo("");
         assertThat(body.get("path")).isEqualTo("/api/empl/payment/");
     }
 }

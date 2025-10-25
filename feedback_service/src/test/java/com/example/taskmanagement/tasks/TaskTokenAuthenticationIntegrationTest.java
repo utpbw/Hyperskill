@@ -111,6 +111,48 @@ class TaskTokenAuthenticationIntegrationTest {
         assertThat(postedComment.author()).isEqualTo(assigneeEmail);
         assertThat(postedComment.text()).isEqualTo("Great job");
 
+        TaskCommentRequest secondCommentRequest = new TaskCommentRequest("Needs review");
+        HttpHeaders secondCommentHeaders = new HttpHeaders();
+        secondCommentHeaders.setContentType(MediaType.APPLICATION_JSON);
+        secondCommentHeaders.setBearerAuth(authorToken);
+
+        ResponseEntity<TaskCommentResponse> secondCommentResponse = restTemplate.exchange(
+                "/api/tasks/" + taskId + "/comments",
+                HttpMethod.POST,
+                new HttpEntity<>(secondCommentRequest, secondCommentHeaders),
+                TaskCommentResponse.class
+        );
+
+        assertThat(secondCommentResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TaskCommentResponse authorComment = secondCommentResponse.getBody();
+        assertThat(authorComment).isNotNull();
+
+        HttpHeaders listCommentsHeaders = new HttpHeaders();
+        listCommentsHeaders.setBearerAuth(authorToken);
+
+        ResponseEntity<TaskCommentResponse[]> commentListResponse = restTemplate.exchange(
+                "/api/tasks/" + taskId + "/comments",
+                HttpMethod.GET,
+                new HttpEntity<>(listCommentsHeaders),
+                TaskCommentResponse[].class
+        );
+
+        assertThat(commentListResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TaskCommentResponse[] comments = commentListResponse.getBody();
+        assertThat(comments).isNotNull();
+        assertThat(comments).hasSize(2);
+        assertThat(comments[0].id()).isEqualTo(authorComment.id());
+        assertThat(comments[1].id()).isEqualTo(postedComment.id());
+
+        ResponseEntity<String> unauthorizedCommentsResponse = restTemplate.exchange(
+                "/api/tasks/" + taskId + "/comments",
+                HttpMethod.GET,
+                new HttpEntity<>(new HttpHeaders()),
+                String.class
+        );
+
+        assertThat(unauthorizedCommentsResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
         TaskCommentRequest invalidCommentRequest = new TaskCommentRequest("   ");
         ResponseEntity<String> invalidCommentResponse = restTemplate.exchange(
                 "/api/tasks/" + taskId + "/comments",

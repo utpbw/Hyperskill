@@ -111,6 +111,15 @@ public class TaskService {
         return mapToCommentResponse(saved);
     }
 
+    public List<TaskCommentResponse> getComments(long taskId) {
+        Task task = findTask(taskId);
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt", "id");
+        return taskCommentRepository.findAllByTask(task, sort)
+                .stream()
+                .map(this::mapToCommentResponse)
+                .toList();
+    }
+
     public List<TaskResponse> getTasks(String author, String assignee) {
         Sort sort = Sort.by(Sort.Direction.DESC, "id");
         String normalizedAuthor = normalizeOptionalEmail(author);
@@ -187,8 +196,7 @@ public class TaskService {
                         ? String.valueOf(comment.getTask().getId())
                         : null,
                 comment.getText(),
-                comment.getAuthor(),
-                comment.getCreatedAt() != null ? comment.getCreatedAt().toString() : null
+                comment.getAuthor()
         );
     }
 }

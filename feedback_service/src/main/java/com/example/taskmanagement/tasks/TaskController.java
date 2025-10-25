@@ -74,4 +74,13 @@ public class TaskController {
         }
         return taskService.addComment(taskId, request, authentication.getName());
     }
+
+    @GetMapping(path = "/{taskId}/comments")
+    public List<TaskCommentResponse> getComments(@PathVariable("taskId") long taskId,
+                                                 Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        return taskService.getComments(taskId);
+    }
 }

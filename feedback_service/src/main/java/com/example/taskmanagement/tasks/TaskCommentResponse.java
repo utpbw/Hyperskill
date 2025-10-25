@@ -1,10 +1,11 @@
 package com.example.taskmanagement.tasks;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public record TaskCommentResponse(
         String id,
-        String taskId,
+        @JsonProperty("task_id") String taskId,
         String text,
-        String author,
-        String createdAt
+        String author
 ) {
 }

@@ -21,6 +21,14 @@ class AuthControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    private Map<?, ?> parseBody(ResponseEntity<String> response) {
+        try {
+            return objectMapper.readValue(response.getBody(), Map.class);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to parse response body", ex);
+        }
+    }
+
     @Test
     void signup_withValidRequest_returnsCreatedUserDetails() {
         SignupRequest request = new SignupRequest(
@@ -124,7 +132,11 @@ class AuthControllerIntegrationTest {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).isNotNull().contains("Password length must be 12 chars minimum!");
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("status")).isEqualTo(400);
+        assertThat(body.get("error")).isEqualTo("Bad Request");
+        assertThat(body.get("message")).isEqualTo("Password length must be 12 chars minimum!");
+        assertThat(body.get("path")).isEqualTo("/api/auth/signup");
     }
 
     @Test
@@ -143,7 +155,11 @@ class AuthControllerIntegrationTest {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).isNotNull().contains("The password is in the hacker's database!");
+        Map<?, ?> body = parseBody(response);
+        assertThat(body.get("status")).isEqualTo(400);
+        assertThat(body.get("error")).isEqualTo("Bad Request");
+        assertThat(body.get("message")).isEqualTo("The password is in the hacker's database!");
+        assertThat(body.get("path")).isEqualTo("/api/auth/signup");
     }
 
     @Test
@@ -317,7 +333,11 @@ class AuthControllerIntegrationTest {
                 );
 
         assertThat(changeResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(changeResponse.getBody()).isNotNull().contains("Password length must be 12 chars minimum!");
+        Map<?, ?> body = parseBody(changeResponse);
+        assertThat(body.get("status")).isEqualTo(400);
+        assertThat(body.get("error")).isEqualTo("Bad Request");
+        assertThat(body.get("message")).isEqualTo("Password length must be 12 chars minimum!");
+        assertThat(body.get("path")).isEqualTo("/api/auth/changepass");
     }
 
     @Test
@@ -346,7 +366,11 @@ class AuthControllerIntegrationTest {
                 );
 
         assertThat(changeResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(changeResponse.getBody()).isNotNull().contains("The password is in the hacker's database!");
+        Map<?, ?> body = parseBody(changeResponse);
+        assertThat(body.get("status")).isEqualTo(400);
+        assertThat(body.get("error")).isEqualTo("Bad Request");
+        assertThat(body.get("message")).isEqualTo("The password is in the hacker's database!");
+        assertThat(body.get("path")).isEqualTo("/api/auth/changepass");
     }
 
     @Test
@@ -375,7 +399,11 @@ class AuthControllerIntegrationTest {
                 );
 
         assertThat(changeResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(changeResponse.getBody()).isNotNull().contains("The passwords must be different!");
+        Map<?, ?> body = parseBody(changeResponse);
+        assertThat(body.get("status")).isEqualTo(400);
+        assertThat(body.get("error")).isEqualTo("Bad Request");
+        assertThat(body.get("message")).isEqualTo("The passwords must be different!");
+        assertThat(body.get("path")).isEqualTo("/api/auth/changepass");
     }
 
     @Test

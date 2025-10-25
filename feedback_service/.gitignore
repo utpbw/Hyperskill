@@ -1,3 +1,4 @@
 /target/
 *.p12
 *.p12.b64
+data/

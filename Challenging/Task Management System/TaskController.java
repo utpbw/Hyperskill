@@ -27,8 +27,10 @@ public class TaskController {
     }
 
     @GetMapping
-    public ResponseEntity<List<TaskService.Task>> listTasks(@RequestParam(name = "author", required = false) String author) {
-        return ResponseEntity.ok(taskService.getAllTasks(author));
+    public ResponseEntity<List<TaskService.Task>> listTasks(
+            @RequestParam(name = "author", required = false) String author,
+            @RequestParam(name = "assignee", required = false) String assignee) {
+        return ResponseEntity.ok(taskService.getAllTasks(author, assignee));
     }
 
     @PostMapping

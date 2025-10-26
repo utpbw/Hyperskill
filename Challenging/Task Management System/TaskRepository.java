@@ -9,4 +9,8 @@ public interface TaskRepository extends JpaRepository<TaskEntity, Long> {
     List<TaskEntity> findAllByOrderByIdDesc();
 
     List<TaskEntity> findAllByAuthorEmailOrderByIdDesc(String authorEmail);
+
+    List<TaskEntity> findAllByAssigneeEmailOrderByIdDesc(String assigneeEmail);
+
+    List<TaskEntity> findAllByAuthorEmailAndAssigneeEmailOrderByIdDesc(String authorEmail, String assigneeEmail);
 }

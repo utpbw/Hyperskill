@@ -52,13 +52,24 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
-    public List<Task> getAllTasks(String authorEmail) {
+    public List<Task> getAllTasks(String authorEmail, String assigneeEmail) {
+        String normalizedAuthor = normalizeFilterValue(authorEmail);
+        String normalizedAssignee = normalizeFilterValue(assigneeEmail);
+
         List<TaskEntity> entities;
-        if (authorEmail != null && !authorEmail.isBlank()) {
-            entities = taskRepository.findAllByAuthorEmailOrderByIdDesc(normalizeEmail(authorEmail));
+        if (normalizedAuthor != null && normalizedAssignee != null) {
+            entities = taskRepository.findAllByAuthorEmailAndAssigneeEmailOrderByIdDesc(
+                    normalizedAuthor,
+                    normalizedAssignee
+            );
+        } else if (normalizedAuthor != null) {
+            entities = taskRepository.findAllByAuthorEmailOrderByIdDesc(normalizedAuthor);
+        } else if (normalizedAssignee != null) {
+            entities = taskRepository.findAllByAssigneeEmailOrderByIdDesc(normalizedAssignee);
         } else {
             entities = taskRepository.findAllByOrderByIdDesc();
         }
+
         return entities.stream().map(this::toTask).collect(Collectors.toList());
     }
 
@@ -125,6 +136,19 @@ public class TaskService {
 
     private String normalizeEmail(String email) {
         return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeFilterValue(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        if (!StringUtils.hasText(trimmed)) {
+            return null;
+        }
+
+        return normalizeEmail(trimmed);
     }
 
     private Optional<String> normalizeOptionalEmail(String email) {

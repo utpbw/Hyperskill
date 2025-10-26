@@ -7,6 +7,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -52,7 +53,7 @@ public class TaskService {
         entity.setAssigneeEmail(null);
 
         TaskEntity saved = taskRepository.save(entity);
-        return toTask(saved);
+        return toTask(saved, 0L);
     }
 
     @Transactional(readOnly = true)
@@ -74,7 +75,22 @@ public class TaskService {
             entities = taskRepository.findAllByOrderByIdDesc();
         }
 
-        return entities.stream().map(this::toTask).collect(Collectors.toList());
+        if (entities.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> taskIds = entities.stream()
+                .map(TaskEntity::getId)
+                .collect(Collectors.toList());
+
+        Map<Long, Long> commentCounts = taskCommentRepository.findCommentCountsForTaskIds(taskIds)
+                .stream()
+                .collect(Collectors.toMap(TaskCommentRepository.CommentCount::getTaskId,
+                        TaskCommentRepository.CommentCount::getTotal));
+
+        return entities.stream()
+                .map(entity -> toTask(entity, commentCounts.getOrDefault(entity.getId(), 0L)))
+                .collect(Collectors.toList());
     }
 
     @Transactional
@@ -156,13 +172,19 @@ public class TaskService {
     }
 
     private Task toTask(TaskEntity entity) {
+        long totalComments = taskCommentRepository.countByTask(entity);
+        return toTask(entity, totalComments);
+    }
+
+    private Task toTask(TaskEntity entity, long commentCount) {
         return new Task(
                 String.valueOf(entity.getId()),
                 entity.getTitle(),
                 entity.getDescription(),
                 entity.getStatus(),
                 entity.getAuthorEmail(),
-                entity.getAssigneeEmail() == null ? "none" : entity.getAssigneeEmail()
+                entity.getAssigneeEmail() == null ? "none" : entity.getAssigneeEmail(),
+                Math.toIntExact(commentCount)
         );
     }
 
@@ -221,7 +243,8 @@ public class TaskService {
         return trimmed;
     }
 
-    public record Task(String id, String title, String description, String status, String author, String assignee) { }
+    public record Task(String id, String title, String description, String status, String author, String assignee,
+                       int totalComments) { }
 
     public record TaskComment(String id, String taskId, String text, String author) { }
 

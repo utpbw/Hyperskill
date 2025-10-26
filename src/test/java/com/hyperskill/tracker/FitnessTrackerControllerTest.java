@@ -86,7 +86,7 @@ class FitnessTrackerControllerTest {
     @Test
     @DisplayName("Authenticated application can create records and application name is returned")
     void createRecordWithValidApiKeyIncludesApplication() throws Exception {
-        Application application = persistApplication("Workout Tracker");
+        Application application = persistApplication("Workout Tracker", "premium");
 
         TrackerRecordRequest request = new TrackerRecordRequest("alice", "Cycling", 1500, 600);
 
@@ -108,12 +108,63 @@ class FitnessTrackerControllerTest {
             .andExpect(jsonPath("$[0].calories").value(600));
     }
 
-    private Application persistApplication(String name) {
+    @Test
+    @DisplayName("Basic applications are limited to one request per second across tracker endpoints")
+    void basicApplicationRateLimitedAcrossEndpoints() throws Exception {
+        Application application = persistApplication("Basic Tracker", "basic");
+
+        TrackerRecordRequest request = new TrackerRecordRequest("bob", "Rowing", 1200, 400);
+
+        mockMvc.perform(post("/api/tracker")
+                .header("X-API-Key", application.getApiKey())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/tracker")
+                .header("X-API-Key", application.getApiKey()))
+            .andExpect(status().isTooManyRequests());
+
+        Thread.sleep(1_100L);
+
+        mockMvc.perform(get("/api/tracker")
+                .header("X-API-Key", application.getApiKey()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Premium applications are not subject to tracker rate limiting")
+    void premiumApplicationsAreNotRateLimited() throws Exception {
+        Application application = persistApplication("Premium Tracker", "premium");
+
+        TrackerRecordRequest firstRequest = new TrackerRecordRequest("carol", "Yoga", 900, 200);
+        TrackerRecordRequest secondRequest = new TrackerRecordRequest("carol", "Swim", 1800, 500);
+
+        mockMvc.perform(post("/api/tracker")
+                .header("X-API-Key", application.getApiKey())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(firstRequest)))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/tracker")
+                .header("X-API-Key", application.getApiKey())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(secondRequest)))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/tracker")
+                .header("X-API-Key", application.getApiKey()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(2)));
+    }
+
+    private Application persistApplication(String name, String category) {
         Developer developer = new Developer(name.toLowerCase() + "@example.com", passwordEncoder.encode("password"));
         Developer savedDeveloper = developerRepository.save(developer);
 
         String apiKey = UUID.randomUUID().toString();
-        Application application = new Application(name, "description", apiKey, "basic", savedDeveloper);
+        Application application = new Application(name, "description", apiKey, category, savedDeveloper);
         return applicationRepository.save(application);
     }
 }

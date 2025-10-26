@@ -23,9 +23,14 @@ public class FitnessTrackerController {
     private final ApplicationRepository applicationRepository;
     private final AtomicLong idSequence = new AtomicLong(1L);
     private final Deque<TrackerRecord> records = new ConcurrentLinkedDeque<>();
+    private final TrackerRateLimiter trackerRateLimiter;
 
-    public FitnessTrackerController(ApplicationRepository applicationRepository) {
+    public FitnessTrackerController(
+        ApplicationRepository applicationRepository,
+        TrackerRateLimiter trackerRateLimiter
+    ) {
         this.applicationRepository = applicationRepository;
+        this.trackerRateLimiter = trackerRateLimiter;
     }
 
     @PostMapping
@@ -38,9 +43,14 @@ public class FitnessTrackerController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
+        Application authenticatedApplication = application.get();
+        if (!trackerRateLimiter.tryAcquire(authenticatedApplication)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
+        }
+
         TrackerRecord record = new TrackerRecord(
             idSequence.getAndIncrement(),
-            application.get().getName(),
+            authenticatedApplication.getName(),
             request.username(),
             request.activity(),
             request.duration(),
@@ -55,8 +65,13 @@ public class FitnessTrackerController {
     public ResponseEntity<List<TrackerRecord>> listRecords(
         @RequestHeader(value = "X-API-Key", required = false) String apiKey
     ) {
-        if (authenticate(apiKey).isEmpty()) {
+        Optional<Application> application = authenticate(apiKey);
+        if (application.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        if (!trackerRateLimiter.tryAcquire(application.get())) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
 
         return ResponseEntity.ok(new ArrayList<>(records));

@@ -1,5 +1,7 @@
 package com.hyperskill.tracker;
 
+import java.util.List;
+
 import jakarta.validation.Valid;
 
 import org.springframework.http.ResponseEntity;
@@ -24,10 +26,16 @@ import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 public class DeveloperController {
 
     private final DeveloperRepository developerRepository;
+    private final ApplicationRepository applicationRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public DeveloperController(DeveloperRepository developerRepository, PasswordEncoder passwordEncoder) {
+    public DeveloperController(
+        DeveloperRepository developerRepository,
+        ApplicationRepository applicationRepository,
+        PasswordEncoder passwordEncoder
+    ) {
         this.developerRepository = developerRepository;
+        this.applicationRepository = applicationRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -60,6 +68,11 @@ public class DeveloperController {
             throw new ResponseStatusException(FORBIDDEN, "Forbidden");
         }
 
-        return new DeveloperProfile(developer.getId(), developer.getEmail());
+        List<DeveloperApplicationView> applications = applicationRepository.findAllByDeveloperOrderByIdDesc(developer)
+            .stream()
+            .map(app -> new DeveloperApplicationView(app.getId(), app.getName(), app.getDescription(), app.getApiKey()))
+            .toList();
+
+        return new DeveloperProfile(developer.getId(), developer.getEmail(), applications);
     }
 }

@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 @Entity
@@ -24,14 +26,19 @@ public class Application {
     @Column(nullable = false, unique = true)
     private String apiKey;
 
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "developer_id", nullable = false)
+    private Developer developer;
+
     protected Application() {
         // JPA requirement
     }
 
-    public Application(String name, String description, String apiKey) {
+    public Application(String name, String description, String apiKey, Developer developer) {
         this.name = name;
         this.description = description;
         this.apiKey = apiKey;
+        this.developer = developer;
     }
 
     public Long getId() {
@@ -48,5 +55,9 @@ public class Application {
 
     public String getApiKey() {
         return apiKey;
+    }
+
+    public Developer getDeveloper() {
+        return developer;
     }
 }

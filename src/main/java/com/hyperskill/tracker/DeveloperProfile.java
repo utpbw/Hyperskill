@@ -1,4 +1,6 @@
 package com.hyperskill.tracker;
 
-public record DeveloperProfile(Long id, String email) {
+import java.util.List;
+
+public record DeveloperProfile(Long id, String email, List<DeveloperApplicationView> applications) {
 }

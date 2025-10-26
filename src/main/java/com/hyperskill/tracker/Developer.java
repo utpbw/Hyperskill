@@ -5,7 +5,12 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @Entity
 @Table(name = "developers")
@@ -20,6 +25,9 @@ public class Developer {
 
     @Column(nullable = false)
     private String password;
+
+    @OneToMany(mappedBy = "developer")
+    private List<Application> applications = new ArrayList<>();
 
     protected Developer() {
         // JPA requirement
@@ -44,5 +52,9 @@ public class Developer {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public List<Application> getApplications() {
+        return Collections.unmodifiableList(applications);
     }
 }

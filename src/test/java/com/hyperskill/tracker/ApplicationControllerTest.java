@@ -47,7 +47,7 @@ class ApplicationControllerTest {
     @Test
     @DisplayName("Registering an application requires authentication")
     void registerApplicationRequiresAuthentication() throws Exception {
-        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest("My App", "description");
+        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest("My App", "description", "basic");
 
         mockMvc.perform(post("/api/applications/register")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -60,7 +60,21 @@ class ApplicationControllerTest {
     void registerApplicationWithInvalidBodyReturns400() throws Exception {
         Developer developer = persistDeveloper("dev@example.com", "password");
 
-        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest(" ", "description");
+        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest(" ", "description", "basic");
+
+        mockMvc.perform(post("/api/applications/register")
+                .header("Authorization", basicAuthHeader(developer.getEmail(), "password"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Category must be either basic or premium")
+    void registerApplicationWithInvalidCategoryReturns400() throws Exception {
+        Developer developer = persistDeveloper("category@example.com", "password");
+
+        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest("Name", "description", "gold");
 
         mockMvc.perform(post("/api/applications/register")
                 .header("Authorization", basicAuthHeader(developer.getEmail(), "password"))
@@ -74,7 +88,7 @@ class ApplicationControllerTest {
     void registerApplicationSuccessReturnsApiKey() throws Exception {
         Developer developer = persistDeveloper("owner@example.com", "password");
 
-        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest("Workout App", "Tracks workouts");
+        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest("Workout App", "Tracks workouts", "premium");
 
         String response = mockMvc.perform(post("/api/applications/register")
                 .header("Authorization", basicAuthHeader(developer.getEmail(), "password"))
@@ -83,6 +97,7 @@ class ApplicationControllerTest {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.name").value("Workout App"))
             .andExpect(jsonPath("$.apikey").isNotEmpty())
+            .andExpect(jsonPath("$.category").value("premium"))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -92,6 +107,7 @@ class ApplicationControllerTest {
 
         assertThat(applicationRepository.existsByName("Workout App")).isTrue();
         assertThat(applicationRepository.existsByApiKey(registrationResponse.apikey())).isTrue();
+        assertThat(registrationResponse.category()).isEqualTo("premium");
     }
 
     @Test
@@ -99,7 +115,7 @@ class ApplicationControllerTest {
     void registerApplicationWithDuplicateNameReturns400() throws Exception {
         Developer developer = persistDeveloper("duplicate@example.com", "password");
 
-        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest("Tracker", "desc");
+        ApplicationRegistrationRequest request = new ApplicationRegistrationRequest("Tracker", "desc", "basic");
 
         mockMvc.perform(post("/api/applications/register")
                 .header("Authorization", basicAuthHeader(developer.getEmail(), "password"))

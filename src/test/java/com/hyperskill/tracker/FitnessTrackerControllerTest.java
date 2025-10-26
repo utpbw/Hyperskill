@@ -113,7 +113,7 @@ class FitnessTrackerControllerTest {
         Developer savedDeveloper = developerRepository.save(developer);
 
         String apiKey = UUID.randomUUID().toString();
-        Application application = new Application(name, "description", apiKey, savedDeveloper);
+        Application application = new Application(name, "description", apiKey, "basic", savedDeveloper);
         return applicationRepository.save(application);
     }
 }

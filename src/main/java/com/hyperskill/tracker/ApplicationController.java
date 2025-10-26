@@ -47,9 +47,19 @@ public class ApplicationController {
             .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "Unauthorized"));
 
         String apiKey = generateUniqueApiKey();
-        Application application = new Application(request.name(), request.description(), apiKey, developer);
+        Application application = new Application(
+            request.name(),
+            request.description(),
+            apiKey,
+            request.category(),
+            developer
+        );
         Application saved = applicationRepository.save(application);
-        ApplicationRegistrationResponse response = new ApplicationRegistrationResponse(saved.getName(), saved.getApiKey());
+        ApplicationRegistrationResponse response = new ApplicationRegistrationResponse(
+            saved.getName(),
+            saved.getApiKey(),
+            saved.getCategory()
+        );
 
         return ResponseEntity.status(CREATED).body(response);
     }

@@ -26,6 +26,9 @@ public class Application {
     @Column(nullable = false, unique = true)
     private String apiKey;
 
+    @Column(nullable = false)
+    private String category;
+
     @ManyToOne(optional = false)
     @JoinColumn(name = "developer_id", nullable = false)
     private Developer developer;
@@ -34,10 +37,11 @@ public class Application {
         // JPA requirement
     }
 
-    public Application(String name, String description, String apiKey, Developer developer) {
+    public Application(String name, String description, String apiKey, String category, Developer developer) {
         this.name = name;
         this.description = description;
         this.apiKey = apiKey;
+        this.category = category;
         this.developer = developer;
     }
 
@@ -55,6 +59,10 @@ public class Application {
 
     public String getApiKey() {
         return apiKey;
+    }
+
+    public String getCategory() {
+        return category;
     }
 
     public Developer getDeveloper() {

@@ -70,7 +70,13 @@ public class DeveloperController {
 
         List<DeveloperApplicationView> applications = applicationRepository.findAllByDeveloperOrderByIdDesc(developer)
             .stream()
-            .map(app -> new DeveloperApplicationView(app.getId(), app.getName(), app.getDescription(), app.getApiKey()))
+            .map(app -> new DeveloperApplicationView(
+                app.getId(),
+                app.getName(),
+                app.getDescription(),
+                app.getApiKey(),
+                app.getCategory()
+            ))
             .toList();
 
         return new DeveloperProfile(developer.getId(), developer.getEmail(), applications);

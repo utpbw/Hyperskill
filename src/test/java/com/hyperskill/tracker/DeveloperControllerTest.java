@@ -69,8 +69,8 @@ class DeveloperControllerTest {
     @DisplayName("Developer profile lists applications from newest to oldest")
     void developerProfileListsApplicationsNewestFirst() throws Exception {
         Developer developer = persistDeveloper("owner@example.com", "password");
-        Application firstApp = applicationRepository.save(new Application("First", "first", "key-1", developer));
-        Application secondApp = applicationRepository.save(new Application("Second", "second", "key-2", developer));
+        Application firstApp = applicationRepository.save(new Application("First", "first", "key-1", "basic", developer));
+        Application secondApp = applicationRepository.save(new Application("Second", "second", "key-2", "premium", developer));
 
         String response = mockMvc.perform(get("/api/developers/" + developer.getId())
                 .header("Authorization", basicAuthHeader(developer.getEmail(), "password"))
@@ -79,6 +79,8 @@ class DeveloperControllerTest {
             .andExpect(jsonPath("$.id").value(developer.getId()))
             .andExpect(jsonPath("$.email").value(developer.getEmail()))
             .andExpect(jsonPath("$.applications").isArray())
+            .andExpect(jsonPath("$.applications[0].category").value("premium"))
+            .andExpect(jsonPath("$.applications[1].category").value("basic"))
             .andReturn()
             .getResponse()
             .getContentAsString();

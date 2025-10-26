@@ -1,41 +1,60 @@
 package com.example.accounts.api;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 @Service
 public class TaskService {
 
-    private final AtomicLong idGenerator = new AtomicLong();
-    private final ConcurrentMap<String, Task> tasks = new ConcurrentHashMap<>();
+    private static final String CREATED_STATUS = "CREATED";
 
-    public Task createTask(TaskRequest request, String authorEmail) {
-        String id = Long.toString(idGenerator.incrementAndGet());
-        String normalizedAuthor = authorEmail == null ? null : authorEmail.trim().toLowerCase(Locale.ROOT);
-        Task task = new Task(
-                id,
-                request.title().trim(),
-                request.description().trim(),
-                "CREATED",
-                normalizedAuthor
-        );
-        tasks.put(id, task);
-        return task;
+    private final TaskRepository taskRepository;
+
+    public TaskService(TaskRepository taskRepository) {
+        this.taskRepository = taskRepository;
     }
 
-    public List<Task> getAllTasks() {
-        List<Task> ordered = new ArrayList<>(tasks.values());
-        ordered.sort(Comparator.comparingLong(task -> Long.parseLong(task.id()))
-                .reversed());
-        return ordered;
+    @Transactional
+    public Task createTask(TaskRequest request, String authorEmail) {
+        String normalizedAuthor = normalizeEmail(authorEmail);
+
+        TaskEntity entity = new TaskEntity();
+        entity.setTitle(request.title().trim());
+        entity.setDescription(request.description().trim());
+        entity.setStatus(CREATED_STATUS);
+        entity.setAuthorEmail(normalizedAuthor);
+
+        TaskEntity saved = taskRepository.save(entity);
+        return toTask(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Task> getAllTasks(String authorEmail) {
+        List<TaskEntity> entities;
+        if (authorEmail != null && !authorEmail.isBlank()) {
+            entities = taskRepository.findAllByAuthorEmailOrderByIdDesc(normalizeEmail(authorEmail));
+        } else {
+            entities = taskRepository.findAllByOrderByIdDesc();
+        }
+        return entities.stream().map(this::toTask).collect(Collectors.toList());
+    }
+
+    private Task toTask(TaskEntity entity) {
+        return new Task(
+                String.valueOf(entity.getId()),
+                entity.getTitle(),
+                entity.getDescription(),
+                entity.getStatus(),
+                entity.getAuthorEmail()
+        );
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 
     public record Task(String id, String title, String description, String status, String author) { }

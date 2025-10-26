@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
@@ -24,8 +25,8 @@ public class TaskController {
     }
 
     @GetMapping
-    public ResponseEntity<List<TaskService.Task>> listTasks() {
-        return ResponseEntity.ok(taskService.getAllTasks());
+    public ResponseEntity<List<TaskService.Task>> listTasks(@RequestParam(name = "author", required = false) String author) {
+        return ResponseEntity.ok(taskService.getAllTasks(author));
     }
 
     @PostMapping

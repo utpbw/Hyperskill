@@ -33,11 +33,7 @@ public class FitnessTrackerController {
         @RequestHeader(value = "X-API-Key", required = false) String apiKey,
         @RequestBody TrackerRecordRequest request
     ) {
-        if (apiKey == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        Optional<Application> application = applicationRepository.findByApiKey(apiKey);
+        Optional<Application> application = authenticate(apiKey);
         if (application.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
@@ -56,7 +52,21 @@ public class FitnessTrackerController {
     }
 
     @GetMapping
-    public List<TrackerRecord> listRecords() {
-        return new ArrayList<>(records);
+    public ResponseEntity<List<TrackerRecord>> listRecords(
+        @RequestHeader(value = "X-API-Key", required = false) String apiKey
+    ) {
+        if (authenticate(apiKey).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        return ResponseEntity.ok(new ArrayList<>(records));
+    }
+
+    private Optional<Application> authenticate(String apiKey) {
+        if (apiKey == null) {
+            return Optional.empty();
+        }
+
+        return applicationRepository.findByApiKey(apiKey);
     }
 }

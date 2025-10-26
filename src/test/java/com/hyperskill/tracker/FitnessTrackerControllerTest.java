@@ -69,8 +69,23 @@ class FitnessTrackerControllerTest {
     }
 
     @Test
-    @DisplayName("Authenticated application can create records and publisher is returned")
-    void createRecordWithValidApiKeyIncludesPublisher() throws Exception {
+    @DisplayName("Tracker listing requires X-API-Key header")
+    void listRecordsWithoutApiKeyReturns401() throws Exception {
+        mockMvc.perform(get("/api/tracker"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Invalid API key is rejected when listing tracker records")
+    void listRecordsWithInvalidApiKeyReturns401() throws Exception {
+        mockMvc.perform(get("/api/tracker")
+                .header("X-API-Key", "invalid"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Authenticated application can create records and application name is returned")
+    void createRecordWithValidApiKeyIncludesApplication() throws Exception {
         Application application = persistApplication("Workout Tracker");
 
         TrackerRecordRequest request = new TrackerRecordRequest("alice", "Cycling", 1500, 600);
@@ -80,12 +95,13 @@ class FitnessTrackerControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.publisher").value("Workout Tracker"));
+            .andExpect(jsonPath("$.application").value("Workout Tracker"));
 
-        mockMvc.perform(get("/api/tracker"))
+        mockMvc.perform(get("/api/tracker")
+                .header("X-API-Key", application.getApiKey()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
-            .andExpect(jsonPath("$[0].publisher").value("Workout Tracker"))
+            .andExpect(jsonPath("$[0].application").value("Workout Tracker"))
             .andExpect(jsonPath("$[0].username").value("alice"))
             .andExpect(jsonPath("$[0].activity").value("Cycling"))
             .andExpect(jsonPath("$[0].duration").value(1500))

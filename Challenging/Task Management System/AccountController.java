@@ -1,16 +1,27 @@
 package com.example.accounts.api;
 
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/accounts")
 public class AccountController {
 
+    private final AccountService accountService;
+
+    public AccountController(AccountService accountService) {
+        this.accountService = accountService;
+    }
+
     @PostMapping
-    public ResponseEntity<?> createAccount(@Validated @RequestBody AccountRequest request) {
-        // If validation passes, return OK
+    public ResponseEntity<Void> createAccount(@Valid @RequestBody AccountRequest request) {
+        boolean created = accountService.registerAccount(request);
+
+        if (!created) {
+            return ResponseEntity.status(409).build();
+        }
+
         return ResponseEntity.ok().build();
     }
 }

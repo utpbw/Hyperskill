@@ -3,7 +3,9 @@ package com.example.accounts.api;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -34,6 +36,15 @@ public class TaskController {
                                                        Authentication authentication) {
         String author = Objects.requireNonNull(authentication, "authentication").getName();
         TaskService.Task task = taskService.createTask(request, author);
+        return ResponseEntity.ok(task);
+    }
+
+    @PutMapping("/{taskId}/assign")
+    public ResponseEntity<TaskService.Task> assignTask(@PathVariable("taskId") long taskId,
+                                                       @Valid @RequestBody TaskAssignmentRequest request,
+                                                       Authentication authentication) {
+        String actingUser = Objects.requireNonNull(authentication, "authentication").getName();
+        TaskService.Task task = taskService.assignTask(taskId, request.assignee(), actingUser);
         return ResponseEntity.ok(task);
     }
 }

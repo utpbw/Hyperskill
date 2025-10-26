@@ -22,6 +22,9 @@ public class TaskEntity {
     @Column(name = "author_email", nullable = false)
     private String authorEmail;
 
+    @Column(name = "assignee_email")
+    private String assigneeEmail;
+
     public Long getId() {
         return id;
     }
@@ -60,5 +63,13 @@ public class TaskEntity {
 
     public void setAuthorEmail(String authorEmail) {
         this.authorEmail = authorEmail;
+    }
+
+    public String getAssigneeEmail() {
+        return assigneeEmail;
+    }
+
+    public void setAssigneeEmail(String assigneeEmail) {
+        this.assigneeEmail = assigneeEmail;
     }
 }

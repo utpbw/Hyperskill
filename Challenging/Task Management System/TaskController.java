@@ -58,4 +58,13 @@ public class TaskController {
         TaskService.Task task = taskService.updateStatus(taskId, request.status(), actingUser);
         return ResponseEntity.ok(task);
     }
+
+    @PostMapping("/{taskId}/comments")
+    public ResponseEntity<TaskService.TaskComment> addComment(@PathVariable("taskId") long taskId,
+                                                              @Valid @RequestBody TaskCommentRequest request,
+                                                              Authentication authentication) {
+        String commentingUser = Objects.requireNonNull(authentication, "authentication").getName();
+        TaskService.TaskComment comment = taskService.addComment(taskId, request.text(), commentingUser);
+        return ResponseEntity.ok(comment);
+    }
 }

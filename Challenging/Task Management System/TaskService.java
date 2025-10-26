@@ -30,10 +30,14 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final AccountRepository accountRepository;
+    private final TaskCommentRepository taskCommentRepository;
 
-    public TaskService(TaskRepository taskRepository, AccountRepository accountRepository) {
+    public TaskService(TaskRepository taskRepository,
+                       AccountRepository accountRepository,
+                       TaskCommentRepository taskCommentRepository) {
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
+        this.taskCommentRepository = taskCommentRepository;
     }
 
     @Transactional
@@ -123,6 +127,23 @@ public class TaskService {
         return toTask(saved);
     }
 
+    @Transactional
+    public TaskComment addComment(long taskId, String commentText, String commentingUserEmail) {
+        TaskEntity task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND));
+
+        String normalizedAuthor = normalizeEmail(commentingUserEmail);
+        String sanitizedText = sanitizeCommentText(commentText);
+
+        TaskCommentEntity entity = new TaskCommentEntity();
+        entity.setTask(task);
+        entity.setAuthorEmail(normalizedAuthor);
+        entity.setText(sanitizedText);
+
+        TaskCommentEntity saved = taskCommentRepository.save(entity);
+        return toComment(saved);
+    }
+
     private Task toTask(TaskEntity entity) {
         return new Task(
                 String.valueOf(entity.getId()),
@@ -176,5 +197,29 @@ public class TaskService {
         return value != null && value.trim().equalsIgnoreCase("none");
     }
 
+    private String sanitizeCommentText(String text) {
+        if (text == null) {
+            throw new ResponseStatusException(BAD_REQUEST);
+        }
+
+        String trimmed = text.trim();
+        if (!StringUtils.hasText(trimmed)) {
+            throw new ResponseStatusException(BAD_REQUEST);
+        }
+
+        return trimmed;
+    }
+
     public record Task(String id, String title, String description, String status, String author, String assignee) { }
+
+    public record TaskComment(String id, String taskId, String text, String author) { }
+
+    private TaskComment toComment(TaskCommentEntity entity) {
+        return new TaskComment(
+                String.valueOf(entity.getId()),
+                String.valueOf(entity.getTask().getId()),
+                entity.getText(),
+                entity.getAuthorEmail()
+        );
+    }
 }

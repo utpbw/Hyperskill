@@ -67,4 +67,12 @@ public class TaskController {
         TaskService.TaskComment comment = taskService.addComment(taskId, request.text(), commentingUser);
         return ResponseEntity.ok(comment);
     }
+
+    @GetMapping("/{taskId}/comments")
+    public ResponseEntity<List<TaskService.TaskComment>> getComments(@PathVariable("taskId") long taskId,
+                                                                     Authentication authentication) {
+        Objects.requireNonNull(authentication, "authentication");
+        List<TaskService.TaskComment> comments = taskService.getCommentsForTask(taskId);
+        return ResponseEntity.ok(comments);
+    }
 }

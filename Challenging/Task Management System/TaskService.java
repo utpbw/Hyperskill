@@ -144,6 +144,17 @@ public class TaskService {
         return toComment(saved);
     }
 
+    @Transactional(readOnly = true)
+    public List<TaskComment> getCommentsForTask(long taskId) {
+        TaskEntity task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND));
+
+        return taskCommentRepository.findAllByTaskOrderByIdDesc(task)
+                .stream()
+                .map(this::toComment)
+                .collect(Collectors.toList());
+    }
+
     private Task toTask(TaskEntity entity) {
         return new Task(
                 String.valueOf(entity.getId()),

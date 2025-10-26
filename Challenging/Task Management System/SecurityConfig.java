@@ -10,6 +10,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 
 import java.util.Locale;
 
@@ -17,15 +18,18 @@ import java.util.Locale;
 public class SecurityConfig {
 
     private final AccountRepository accountRepository;
+    private final TokenService tokenService;
 
-    public SecurityConfig(AccountRepository accountRepository) {
+    public SecurityConfig(AccountRepository accountRepository, TokenService tokenService) {
         this.accountRepository = accountRepository;
+        this.tokenService = tokenService;
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
+                .addFilterBefore(new TokenAuthenticationFilter(tokenService), BasicAuthenticationFilter.class)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/api/tasks/**", "/api/auth/token").authenticated()
                         .anyRequest().permitAll()

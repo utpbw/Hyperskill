@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -34,6 +35,17 @@ public class TokenService {
 
         TokenEntity saved = tokenRepository.save(tokenEntity);
         return new Token(saved.getToken(), saved.getExpiresAt());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<String> findNormalizedEmailByToken(String tokenValue) {
+        if (tokenValue == null || tokenValue.isBlank()) {
+            return Optional.empty();
+        }
+
+        return tokenRepository.findByToken(tokenValue)
+                .filter(entity -> entity.getExpiresAt().isAfter(Instant.now()))
+                .map(entity -> entity.getAccount().getNormalizedEmail());
     }
 
     private String normalizeEmail(String email) {

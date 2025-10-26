@@ -8,6 +8,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -19,6 +20,11 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 public class TaskService {
 
     private static final String CREATED_STATUS = "CREATED";
+    private static final Set<String> VALID_STATUSES = Set.of(
+            CREATED_STATUS,
+            "IN_PROGRESS",
+            "COMPLETED"
+    );
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", Pattern.CASE_INSENSITIVE);
 
@@ -81,6 +87,27 @@ public class TaskService {
         }
 
         task.setAssigneeEmail(processedAssignee);
+        TaskEntity saved = taskRepository.save(task);
+        return toTask(saved);
+    }
+
+    @Transactional
+    public Task updateStatus(long taskId, String requestedStatus, String actingUserEmail) {
+        TaskEntity task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND));
+
+        String trimmedStatus = requestedStatus == null ? null : requestedStatus.trim();
+        if (!StringUtils.hasText(trimmedStatus) || !VALID_STATUSES.contains(trimmedStatus)) {
+            throw new ResponseStatusException(BAD_REQUEST);
+        }
+
+        String normalizedActor = normalizeEmail(actingUserEmail);
+        String assignee = task.getAssigneeEmail();
+        if (!task.getAuthorEmail().equals(normalizedActor) && (assignee == null || !assignee.equals(normalizedActor))) {
+            throw new ResponseStatusException(FORBIDDEN);
+        }
+
+        task.setStatus(trimmedStatus);
         TaskEntity saved = taskRepository.save(task);
         return toTask(saved);
     }

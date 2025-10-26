@@ -47,4 +47,13 @@ public class TaskController {
         TaskService.Task task = taskService.assignTask(taskId, request.assignee(), actingUser);
         return ResponseEntity.ok(task);
     }
+
+    @PutMapping("/{taskId}/status")
+    public ResponseEntity<TaskService.Task> updateStatus(@PathVariable("taskId") long taskId,
+                                                         @Valid @RequestBody TaskStatusRequest request,
+                                                         Authentication authentication) {
+        String actingUser = Objects.requireNonNull(authentication, "authentication").getName();
+        TaskService.Task task = taskService.updateStatus(taskId, request.status(), actingUser);
+        return ResponseEntity.ok(task);
+    }
 }

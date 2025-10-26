@@ -2,7 +2,9 @@ package com.example.accounts.api;
 
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,8 +31,11 @@ public class TaskService {
         return task;
     }
 
-    public Collection<Task> getAllTasks() {
-        return List.copyOf(tasks.values());
+    public List<Task> getAllTasks() {
+        List<Task> ordered = new ArrayList<>(tasks.values());
+        ordered.sort(Comparator.comparingLong(task -> Long.parseLong(task.id()))
+                .reversed());
+        return ordered;
     }
 
     public record Task(String id, String title, String description, String status, String author) { }

@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
 
-import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 
 @RestController
@@ -24,7 +24,7 @@ public class TaskController {
     }
 
     @GetMapping
-    public ResponseEntity<Collection<TaskService.Task>> listTasks() {
+    public ResponseEntity<List<TaskService.Task>> listTasks() {
         return ResponseEntity.ok(taskService.getAllTasks());
     }
 

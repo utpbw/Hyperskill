@@ -7,4 +7,14 @@ public record DeveloperApplicationView(
     String apikey,
     String category
 ) {
+
+    public static DeveloperApplicationView from(Application application) {
+        return new DeveloperApplicationView(
+            application.getId(),
+            application.getName(),
+            application.getDescription(),
+            application.getApiKey(),
+            application.getCategory()
+        );
+    }
 }

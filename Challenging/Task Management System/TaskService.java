@@ -49,7 +49,8 @@ public class TaskService {
                 entity.getTitle(),
                 entity.getDescription(),
                 entity.getStatus(),
-                entity.getAuthorEmail()
+                entity.getAuthorEmail(),
+                "none"
         );
     }
 
@@ -57,5 +58,5 @@ public class TaskService {
         return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 
-    public record Task(String id, String title, String description, String status, String author) { }
+    public record Task(String id, String title, String description, String status, String author, String assignee) { }
 }
